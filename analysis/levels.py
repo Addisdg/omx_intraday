@@ -6,42 +6,58 @@ import pandas as pd
 def find_levels(
     df: pd.DataFrame,
     window: int = 3,
-    tolerance: float = 1.5,
+    tolerance: float = 0.3,
     min_touches: int = 2,
-) -> dict[str, list[float]]:
-    if len(df) < (window * 2 + 1):
+    recent_only: int = 100,
+):
+    if df.empty:
         return {"supports": [], "resistances": []}
 
-    low_candidates: list[float] = []
-    high_candidates: list[float] = []
+    work = df.tail(recent_only).copy()
 
-    for i in range(window, len(df) - window):
-        section = df.iloc[i - window : i + window + 1]
+    highs = []
+    lows = []
 
-        low = float(df.iloc[i]["low"])
-        high = float(df.iloc[i]["high"])
+    for i in range(window, len(work) - window):
+        high = work.iloc[i]["high"]
+        low = work.iloc[i]["low"]
 
-        if low == float(section["low"].min()):
-            low_candidates.append(low)
-        if high == float(section["high"].max()):
-            high_candidates.append(high)
+        if high == max(work.iloc[i - window : i + window + 1]["high"]):
+            highs.append(high)
 
-    def cluster(vals: list[float]) -> list[float]:
-        vals = sorted(vals)
-        if not vals:
-            return []
+        if low == min(work.iloc[i - window : i + window + 1]["low"]):
+            lows.append(low)
 
-        groups: list[list[float]] = [[vals[0]]]
-        for v in vals[1:]:
-            center = sum(groups[-1]) / len(groups[-1])
-            if abs(v - center) <= tolerance:
-                groups[-1].append(v)
-            else:
-                groups.append([v])
+    def cluster_levels(levels):
+        clusters = []
 
-        return [round(sum(g) / len(g), 2) for g in groups if len(g) >= min_touches]
+        for lvl in sorted(levels):
+            placed = False
+            for cluster in clusters:
+                if abs(cluster[0] - lvl) <= tolerance:
+                    cluster.append(lvl)
+                    placed = True
+                    break
+            if not placed:
+                clusters.append([lvl])
+
+        return [sum(c) / len(c) for c in clusters if len(c) >= min_touches]
+
+    supports = cluster_levels(lows)
+    resistances = cluster_levels(highs)
+
+    current_price = float(work.iloc[-1]["close"])
+
+    supports = [s for s in supports if s < current_price * 1.01]
+    resistances = [r for r in resistances if r > current_price * 0.99]
+
+    supports = [float(s) for s in supports]
+    resistances = [float(r) for r in resistances]
+
+    supports = sorted(round(s, 2) for s in supports)
+    resistances = sorted(round(r, 2) for r in resistances)
 
     return {
-        "supports": cluster(low_candidates),
-        "resistances": cluster(high_candidates),
+        "supports": supports,
+        "resistances": resistances,
     }
