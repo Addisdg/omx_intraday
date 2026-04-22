@@ -28,6 +28,18 @@ def make_chart(
     for r in resistances:
         fig.add_hline(y=r, line_dash="dash", annotation_text=f"R {r}")
 
+    df = df.copy()
+    df["ema20"] = df["close"].ewm(span=20).mean()
+
+    fig.add_trace(
+        go.Scatter(
+            x=df["timestamp"],
+            y=df["ema20"],
+            mode="lines",
+            name="EMA20",
+        )
+    )
+
     fig.update_layout(
         title="OMX live dashboard",
         xaxis_rangeslider_visible=False,

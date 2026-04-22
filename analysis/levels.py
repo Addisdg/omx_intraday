@@ -39,11 +39,7 @@ def find_levels(
             else:
                 groups.append([v])
 
-        return [
-            round(sum(g) / len(g), 2)
-            for g in groups
-            if len(g) >= min_touches
-        ]
+        return [round(sum(g) / len(g), 2) for g in groups if len(g) >= min_touches]
 
     return {
         "supports": cluster(low_candidates),

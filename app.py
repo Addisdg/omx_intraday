@@ -8,7 +8,7 @@ from data.provider_yfinance import YFinanceProvider
 from analysis.levels import find_levels
 from analysis.market_structure import classify_structure
 from charts.plotly_chart import make_chart
-
+from analysis.signals import detect_signal, nearest_support, nearest_resistance
 
 st.set_page_config(page_title="OMX Live Analysis", layout="wide")
 st.title("OMX Live Analysis")
@@ -37,6 +37,10 @@ try:
         st.stop()
 
     levels = find_levels(df, window=3, tolerance=1.5, min_touches=2)
+    latest_close = float(df.iloc[-1]["close"])
+    ns = nearest_support(levels["supports"], latest_close)
+    nr = nearest_resistance(levels["resistances"], latest_close)
+    signal = detect_signal(df, levels["supports"], levels["resistances"])
     structure = classify_structure(df, lookback=min(20, len(df)))
 
     col1, col2 = st.columns([3, 1])
@@ -46,7 +50,7 @@ try:
             df=df,
             supports=levels["supports"],
             resistances=levels["resistances"],
-    )
+        )
         st.plotly_chart(fig, use_container_width=True)
 
     with col2:
@@ -56,6 +60,9 @@ try:
         st.write(f"**Latest close:** {latest_close:.2f}")
         st.write(f"**Supports:** {levels['supports']}")
         st.write(f"**Resistances:** {levels['resistances']}")
-
+        st.write(f"**Nearest support:** {ns}")
+        st.write(f"**Nearest resistance:** {nr}")
+        st.write(f"**Signal:** {signal['signal']}")
+        st.write(f"**Reason:** {signal['reason']}")
 except Exception as e:
     st.error(f"Update failed: {e}")

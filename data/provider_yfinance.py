@@ -25,7 +25,9 @@ class YFinanceProvider:
         )
 
         if df is None or df.empty:
-            return pd.DataFrame(columns=["timestamp", "open", "high", "low", "close", "volume"])
+            return pd.DataFrame(
+                columns=["timestamp", "open", "high", "low", "close", "volume"]
+            )
 
         # Flatten MultiIndex columns if present
         if isinstance(df.columns, pd.MultiIndex):
@@ -38,18 +40,22 @@ class YFinanceProvider:
         elif "Date" in df.columns:
             df = df.rename(columns={"Date": "timestamp"})
 
-        df = df.rename(columns={
-            "Open": "open",
-            "High": "high",
-            "Low": "low",
-            "Close": "close",
-            "Volume": "volume",
-        })
+        df = df.rename(
+            columns={
+                "Open": "open",
+                "High": "high",
+                "Low": "low",
+                "Close": "close",
+                "Volume": "volume",
+            }
+        )
 
         needed = ["timestamp", "open", "high", "low", "close", "volume"]
         missing = [c for c in needed if c not in df.columns]
         if missing:
-            raise ValueError(f"Missing expected columns: {missing}. Got: {list(df.columns)}")
+            raise ValueError(
+                f"Missing expected columns: {missing}. Got: {list(df.columns)}"
+            )
 
         df = df[needed].copy()
 
@@ -57,5 +63,7 @@ class YFinanceProvider:
         for col in ["open", "high", "low", "close", "volume"]:
             df[col] = pd.to_numeric(df[col], errors="coerce")
 
-        df = df.dropna(subset=["timestamp", "open", "high", "low", "close"]).reset_index(drop=True)
+        df = df.dropna(
+            subset=["timestamp", "open", "high", "low", "close"]
+        ).reset_index(drop=True)
         return df
