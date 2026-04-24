@@ -13,10 +13,26 @@ from analysis.trade_engine import build_trade_plan
 
 st.set_page_config(page_title="OMX Live Analysis", layout="wide")
 st.title("OMX Live Analysis")
+st.caption("Educational market analysis only; not financial advice.")
 
 symbol = st.sidebar.text_input("Symbol", value="^OMX")
 interval = st.sidebar.selectbox("Interval", ["1m", "2m", "5m", "15m"], index=0)
 refresh_seconds = st.sidebar.slider("Refresh seconds", 5, 60, 10)
+portfolio_size_sek = st.sidebar.number_input(
+    "Portfolio size",
+    min_value=1_000,
+    max_value=10_000_000,
+    value=30_000,
+    step=1_000,
+)
+risk_percent = st.sidebar.number_input(
+    "Risk per trade (%)",
+    min_value=0.1,
+    max_value=10.0,
+    value=1.0,
+    step=0.1,
+)
+show_debug = st.sidebar.checkbox("Show debug errors", value=False)
 
 preset = st.sidebar.selectbox(
     "Quick presets",
@@ -39,22 +55,23 @@ try:
         )
         st.stop()
 
-    levels = find_levels(df, window=3, tolerance=1.5, min_touches=2)
+    levels = find_levels(df, window=3, tolerance=None, min_touches=2)
     structure = classify_structure(df, lookback=min(30, len(df)))
     signal = classify_signal(df, levels["supports"], levels["resistances"], structure)
     trade_plan = build_trade_plan(
-    df=df,
-    structure=structure,
-    supports=levels["supports"],
-    resistances=levels["resistances"],
-    portfolio_size_sek=30000,
-    risk_percent=1.0,
+        df=df,
+        structure=structure,
+        supports=levels["supports"],
+        resistances=levels["resistances"],
+        portfolio_size_sek=portfolio_size_sek,
+        risk_percent=risk_percent,
     )
 
     latest_close = float(df.iloc[-1]["close"])
     latest_open = float(df.iloc[-1]["open"])
-    latest_high = float(df.iloc[-1]["high"])
-    latest_low = float(df.iloc[-1]["low"])
+    session_high = float(df["high"].max())
+    session_low = float(df["low"].min())
+    latest_timestamp = df.iloc[-1]["timestamp"]
 
     c1, c2 = st.columns([4, 1])
 
@@ -69,11 +86,13 @@ try:
 
     with c2:
         st.subheader("Market Read")
+        st.caption(f"Last candle: {latest_timestamp}")
+        st.caption("Data source: yfinance intraday data, which may be delayed.")
         st.write(f"**Structure:** {structure}")
         st.write(f"**Latest close:** {latest_close:.2f}")
         st.write(f"**Latest open:** {latest_open:.2f}")
-        st.write(f"**Day high:** {latest_high:.2f}")
-        st.write(f"**Day low:** {latest_low:.2f}")
+        st.write(f"**Session high:** {session_high:.2f}")
+        st.write(f"**Session low:** {session_low:.2f}")
 
         st.write(f"**Supports:** {levels['supports']}")
         st.write(f"**Resistances:** {levels['resistances']}")
@@ -97,7 +116,13 @@ try:
         st.write(f"**Signal:** {signal['signal']}")
         st.write(f"**Reason:** {signal['reason']}")
         st.subheader("Trade Engine")
-        st.write(f"**Bias:** {trade_plan.bias}")
+        if trade_plan.bias == "BULLISH":
+            st.success(f"Bias: {trade_plan.bias}")
+        elif trade_plan.bias == "BEARISH":
+            st.error(f"Bias: {trade_plan.bias}")
+        else:
+            st.info(f"Bias: {trade_plan.bias}")
+
         st.write(f"**Setup:** {trade_plan.setup}")
         st.write(f"**Entry:** {trade_plan.entry}")
         st.write(f"**Stop loss:** {trade_plan.stop_loss}")
@@ -111,3 +136,5 @@ try:
 
 except Exception as e:
     st.error(f"Update failed: {e}")
+    if "show_debug" in locals() and show_debug:
+        st.exception(e)
