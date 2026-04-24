@@ -3,9 +3,16 @@ from __future__ import annotations
 import pandas as pd
 import yfinance as yf
 
+from data.cache import save_cached_data
+
 
 class YFinanceProvider:
-    def get_intraday(self, symbol: str, interval: str = "1m") -> pd.DataFrame:
+    def get_intraday(
+        self,
+        symbol: str,
+        interval: str = "1m",
+        save_to_cache: bool = True,
+    ) -> pd.DataFrame:
         period_map = {
             "1m": "1d",
             "2m": "1d",
@@ -66,4 +73,6 @@ class YFinanceProvider:
         df = df.dropna(
             subset=["timestamp", "open", "high", "low", "close"]
         ).reset_index(drop=True)
+        if save_to_cache:
+            save_cached_data(df, symbol, interval)
         return df

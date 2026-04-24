@@ -78,18 +78,29 @@ def _finalize_plan(
     risk_percent: float,
     reason: str,
     min_rr: float = 2.0,
+    fee_per_trade: float = 0.0,
+    slippage_points: float = 0.0,
 ) -> TradePlan:
+    adjusted_entry = entry + slippage_points if bias == "BULLISH" else entry - slippage_points
+    adjusted_stop = stop_loss
+    adjusted_target = target - slippage_points if bias == "BULLISH" else target + slippage_points
     shares, value, risk_per_share = calculate_position_size(
         portfolio_size_sek=portfolio_size_sek,
         risk_percent=risk_percent,
-        entry=entry,
-        stop_loss=stop_loss,
+        entry=adjusted_entry,
+        stop_loss=adjusted_stop,
     )
 
     if risk_per_share is None:
         return _empty_plan(setup="SKIP", reason="Invalid risk: entry and stop are equal")
 
-    reward_per_share = target - entry if bias == "BULLISH" else entry - target
+    fee_per_share = fee_per_trade / shares if shares else 0.0
+    reward_per_share = (
+        adjusted_target - adjusted_entry
+        if bias == "BULLISH"
+        else adjusted_entry - adjusted_target
+    )
+    reward_per_share -= fee_per_share
     rr_ratio = reward_per_share / risk_per_share if risk_per_share else None
 
     if rr_ratio is None or rr_ratio < min_rr:
@@ -110,9 +121,9 @@ def _finalize_plan(
     return TradePlan(
         bias=bias,
         setup=setup,
-        entry=round(entry, 2),
-        stop_loss=round(stop_loss, 2),
-        target=round(target, 2),
+        entry=round(adjusted_entry, 2),
+        stop_loss=round(adjusted_stop, 2),
+        target=round(adjusted_target, 2),
         risk_per_share=round(risk_per_share, 2),
         reward_per_share=round(reward_per_share, 2),
         rr_ratio=round(rr_ratio, 2),
@@ -129,6 +140,8 @@ def build_trade_plan(
     resistances: list[float],
     portfolio_size_sek: float = 30000,
     risk_percent: float = 1.0,
+    fee_per_trade: float = 0.0,
+    slippage_points: float = 0.0,
 ) -> TradePlan:
     if df.empty or len(df) < 5:
         return _empty_plan(setup="NONE", reason="Not enough data")
@@ -169,6 +182,8 @@ def build_trade_plan(
                 target=target,
                 portfolio_size_sek=portfolio_size_sek,
                 risk_percent=risk_percent,
+                fee_per_trade=fee_per_trade,
+                slippage_points=slippage_points,
                 reason="Fresh bullish breakout above resistance",
             )
 
@@ -187,6 +202,8 @@ def build_trade_plan(
                 target=target,
                 portfolio_size_sek=portfolio_size_sek,
                 risk_percent=risk_percent,
+                fee_per_trade=fee_per_trade,
+                slippage_points=slippage_points,
                 reason="Bullish structure; prefer pullback toward support/EMA20",
             )
 
@@ -212,6 +229,8 @@ def build_trade_plan(
                 target=target,
                 portfolio_size_sek=portfolio_size_sek,
                 risk_percent=risk_percent,
+                fee_per_trade=fee_per_trade,
+                slippage_points=slippage_points,
                 reason="Fresh bearish breakdown below support",
             )
 
@@ -230,6 +249,8 @@ def build_trade_plan(
                 target=target,
                 portfolio_size_sek=portfolio_size_sek,
                 risk_percent=risk_percent,
+                fee_per_trade=fee_per_trade,
+                slippage_points=slippage_points,
                 reason="Bearish structure; prefer short on retest into resistance/EMA20",
             )
 

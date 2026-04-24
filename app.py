@@ -3,44 +3,148 @@ from __future__ import annotations
 import streamlit as st
 from streamlit_autorefresh import st_autorefresh
 
-from data.provider_yfinance import YFinanceProvider
+from analysis.confidence import score_setup
 from analysis.levels import find_levels
+from analysis.market_hours import format_timestamp, market_status
 from analysis.market_structure import classify_structure
 from analysis.signals import classify_signal
-from charts.plotly_chart import build_candlestick_chart
 from analysis.trade_engine import build_trade_plan
+from analysis.volume import analyze_volume
+from charts.plotly_chart import build_candlestick_chart
+from config.settings import load_settings, save_settings
+from data.provider_yfinance import YFinanceProvider
+from ui.labels import setup_label, signal_label
+
+
+INTERVALS = ["1m", "2m", "5m", "15m"]
+TIMEZONES = ["Europe/Stockholm", "UTC", "America/New_York"]
+EMA_OPTIONS = [9, 20, 50, 200]
+PRESETS = ["Custom", "^OMX", "AAPL", "MSFT", "NVDA", "SPY", "BTC-USD", "ETH-USD", "EURUSD=X"]
+
+
+def _fmt(value: object) -> str:
+    if value is None:
+        return "None"
+    if isinstance(value, float):
+        return f"{value:.2f}"
+    return str(value)
+
+
+def _nearest_support_text(value: float | None) -> str:
+    return "Below all detected support" if value is None else str(value)
+
+
+def _nearest_resistance_text(value: float | None, resistances: list[float], price: float) -> str:
+    if value is not None:
+        return str(value)
+    if resistances and price > max(resistances):
+        return "Above detected range"
+    return "None"
 
 
 st.set_page_config(page_title="OMX Live Analysis", layout="wide")
 st.title("OMX Live Analysis")
 st.caption("Educational market analysis only; not financial advice.")
 
-symbol = st.sidebar.text_input("Symbol", value="^OMX")
-interval = st.sidebar.selectbox("Interval", ["1m", "2m", "5m", "15m"], index=0)
-refresh_seconds = st.sidebar.slider("Refresh seconds", 5, 60, 10)
+settings = load_settings()
+
+if "symbol_input" not in st.session_state:
+    st.session_state.symbol_input = settings["symbol"]
+if "preset_choice" not in st.session_state:
+    st.session_state.preset_choice = "Custom"
+
+
+def _apply_preset_choice() -> None:
+    if st.session_state.preset_choice != "Custom":
+        st.session_state.symbol_input = st.session_state.preset_choice
+
+
+symbol = st.sidebar.text_input("Symbol", key="symbol_input")
+interval = st.sidebar.selectbox(
+    "Interval",
+    INTERVALS,
+    index=INTERVALS.index(settings["interval"]) if settings["interval"] in INTERVALS else 0,
+)
+refresh_seconds = st.sidebar.slider("Refresh seconds", 5, 60, int(settings["refresh_seconds"]))
 portfolio_size_sek = st.sidebar.number_input(
     "Portfolio size",
     min_value=1_000,
     max_value=10_000_000,
-    value=30_000,
+    value=int(settings["portfolio_size"]),
     step=1_000,
 )
 risk_percent = st.sidebar.number_input(
     "Risk per trade (%)",
     min_value=0.1,
     max_value=10.0,
-    value=1.0,
+    value=float(settings["risk_percent"]),
     step=0.1,
 )
+fee_per_trade = st.sidebar.number_input(
+    "Estimated fee per trade",
+    min_value=0.0,
+    max_value=10_000.0,
+    value=float(settings["fee_per_trade"]),
+    step=1.0,
+)
+slippage_points = st.sidebar.number_input(
+    "Estimated slippage points",
+    min_value=0.0,
+    max_value=100.0,
+    value=float(settings["slippage_points"]),
+    step=0.1,
+)
+timezone = st.sidebar.selectbox(
+    "Display timezone",
+    TIMEZONES,
+    index=TIMEZONES.index(settings["timezone"]) if settings["timezone"] in TIMEZONES else 0,
+)
+clean_chart_mode = st.sidebar.checkbox("Clean chart mode", value=bool(settings["clean_chart_mode"]))
+ema_spans = st.sidebar.multiselect(
+    "Moving averages",
+    EMA_OPTIONS,
+    default=[span for span in settings["ema_spans"] if span in EMA_OPTIONS] or [20],
+    disabled=clean_chart_mode,
+)
+show_vwap = st.sidebar.checkbox("Show VWAP", value=bool(settings["show_vwap"]), disabled=clean_chart_mode)
+show_atr_bands = st.sidebar.checkbox(
+    "Show ATR bands", value=bool(settings["show_atr_bands"]), disabled=clean_chart_mode
+)
+level_distance_percent = st.sidebar.slider(
+    "Show levels within % of price",
+    min_value=0.0,
+    max_value=10.0,
+    value=float(settings["level_distance_percent"]),
+    step=0.5,
+    help="Use 0 to show all detected levels.",
+)
+enable_alerts = st.sidebar.checkbox("Enable setup alerts", value=bool(settings["enable_alerts"]))
 show_debug = st.sidebar.checkbox("Show debug errors", value=False)
 
-preset = st.sidebar.selectbox(
-    "Quick presets",
-    ["Custom", "AAPL", "MSFT", "NVDA", "SPY", "BTC-USD", "ETH-USD", "EURUSD=X"],
-    index=0,
-)
-if preset != "Custom":
-    symbol = preset
+st.sidebar.selectbox("Quick presets", PRESETS, key="preset_choice")
+st.sidebar.button("Apply preset", on_click=_apply_preset_choice)
+
+if st.sidebar.button("Save current settings"):
+    save_settings(
+        {
+            "symbol": symbol,
+            "interval": interval,
+            "refresh_seconds": refresh_seconds,
+            "portfolio_size": portfolio_size_sek,
+            "risk_percent": risk_percent,
+            "fee_per_trade": fee_per_trade,
+            "slippage_points": slippage_points,
+            "timezone": timezone,
+            "ema_spans": ema_spans or [20],
+            "show_vwap": show_vwap,
+            "show_atr_bands": show_atr_bands,
+            "clean_chart_mode": clean_chart_mode,
+            "level_distance_percent": level_distance_percent,
+            "enable_alerts": enable_alerts,
+            "watchlist": settings["watchlist"],
+        }
+    )
+    st.sidebar.success("Settings saved")
 
 st_autorefresh(interval=refresh_seconds * 1000, key="datarefresh")
 
@@ -50,14 +154,13 @@ try:
     df = provider.get_intraday(symbol=symbol, interval=interval)
 
     if df.empty:
-        st.warning(
-            "No data returned. Try AAPL, MSFT, NVDA, SPY, BTC-USD, ETH-USD, EURUSD=X."
-        )
+        st.warning("No data returned. Try AAPL, MSFT, NVDA, SPY, BTC-USD, ETH-USD, EURUSD=X.")
         st.stop()
 
     levels = find_levels(df, window=3, tolerance=None, min_touches=2)
     structure = classify_structure(df, lookback=min(30, len(df)))
     signal = classify_signal(df, levels["supports"], levels["resistances"], structure)
+    volume_read = analyze_volume(df)
     trade_plan = build_trade_plan(
         df=df,
         structure=structure,
@@ -65,56 +168,64 @@ try:
         resistances=levels["resistances"],
         portfolio_size_sek=portfolio_size_sek,
         risk_percent=risk_percent,
+        fee_per_trade=fee_per_trade,
+        slippage_points=slippage_points,
     )
+    confidence = score_setup(df, structure, signal, trade_plan, levels["supports"], levels["resistances"], volume_read)
 
     latest_close = float(df.iloc[-1]["close"])
     latest_open = float(df.iloc[-1]["open"])
     session_high = float(df["high"].max())
     session_low = float(df["low"].min())
-    latest_timestamp = df.iloc[-1]["timestamp"]
+    latest_timestamp = format_timestamp(df.iloc[-1]["timestamp"], timezone)
 
-    c1, c2 = st.columns([4, 1])
+    chart_col, read_col = st.columns([3.8, 1.2])
 
-    with c1:
+    with chart_col:
+        chart_height = 620 if clean_chart_mode else 740
         fig = build_candlestick_chart(
             df=df,
             supports=levels["supports"],
             resistances=levels["resistances"],
             title=f"{symbol} live dashboard",
+            ema_spans=ema_spans or [20],
+            show_vwap=show_vwap,
+            show_atr_bands=show_atr_bands,
+            level_distance_percent=level_distance_percent,
+            clean_mode=clean_chart_mode,
+            height=chart_height,
         )
         st.plotly_chart(fig, use_container_width=True)
 
-    with c2:
+    with read_col:
         st.subheader("Market Read")
         st.caption(f"Last candle: {latest_timestamp}")
+        st.caption(market_status(symbol))
         st.caption("Data source: yfinance intraday data, which may be delayed.")
-        st.write(f"**Structure:** {structure}")
-        st.write(f"**Latest close:** {latest_close:.2f}")
-        st.write(f"**Latest open:** {latest_open:.2f}")
-        st.write(f"**Session high:** {session_high:.2f}")
-        st.write(f"**Session low:** {session_low:.2f}")
 
-        st.write(f"**Supports:** {levels['supports']}")
-        st.write(f"**Resistances:** {levels['resistances']}")
+        price_card, signal_card = st.columns(2)
+        price_card.metric("Last", f"{latest_close:.2f}", f"Open {latest_open:.2f}")
+        signal_card.metric("Confidence", f"{confidence['score']}/100", confidence["grade"])
 
-        nearest_support = signal["nearest_support"]
-        nearest_resistance = signal["nearest_resistance"]
-
-        if nearest_support is None:
-            st.write("**Nearest support:** Below all detected support")
-        else:
-            st.write(f"**Nearest support:** {nearest_support}")
-
-        if nearest_resistance is None:
-            if len(levels["resistances"]) > 0 and latest_close > max(levels["resistances"]):
-                st.write("**Nearest resistance:** Above detected range")
-            else:
-                st.write("**Nearest resistance:** None")
-        else:
-            st.write(f"**Nearest resistance:** {nearest_resistance}")
-
-        st.write(f"**Signal:** {signal['signal']}")
+        st.info(f"Structure: {structure}")
+        st.write(f"**Signal:** {signal_label(signal['signal'])}")
         st.write(f"**Reason:** {signal['reason']}")
+
+        with st.expander("Price levels", expanded=False):
+            st.write(f"**Session high:** {session_high:.2f}")
+            st.write(f"**Session low:** {session_low:.2f}")
+            st.write(f"**Supports:** {levels['supports']}")
+            st.write(f"**Resistances:** {levels['resistances']}")
+            st.write(f"**Nearest support:** {_nearest_support_text(signal['nearest_support'])}")
+            st.write(f"**Nearest resistance:** {_nearest_resistance_text(signal['nearest_resistance'], levels['resistances'], latest_close)}")
+
+        with st.expander("Volume context", expanded=True):
+            st.write(f"**State:** {volume_read['volume_state']}")
+            st.write(f"**Relative volume:** {volume_read['relative_volume']}")
+            st.write(f"**Latest volume:** {volume_read['latest_volume']}")
+            st.write(f"**Average volume:** {volume_read['average_volume']}")
+            st.caption(volume_read["reason"])
+
         st.subheader("Trade Engine")
         if trade_plan.bias == "BULLISH":
             st.success(f"Bias: {trade_plan.bias}")
@@ -123,16 +234,25 @@ try:
         else:
             st.info(f"Bias: {trade_plan.bias}")
 
-        st.write(f"**Setup:** {trade_plan.setup}")
-        st.write(f"**Entry:** {trade_plan.entry}")
-        st.write(f"**Stop loss:** {trade_plan.stop_loss}")
-        st.write(f"**Target:** {trade_plan.target}")
-        st.write(f"**Risk/share:** {trade_plan.risk_per_share}")
-        st.write(f"**Reward/share:** {trade_plan.reward_per_share}")
-        st.write(f"**R/R ratio:** {trade_plan.rr_ratio}")
-        st.write(f"**Position size (shares):** {trade_plan.position_size_shares}")
-        st.write(f"**Position value:** {trade_plan.position_size_value}")
-        st.write(f"**Why:** {trade_plan.reason}")
+        st.write(f"**Setup:** {setup_label(trade_plan.setup)}")
+        trade_metrics = st.columns(2)
+        trade_metrics[0].metric("Entry", _fmt(trade_plan.entry))
+        trade_metrics[1].metric("R/R", _fmt(trade_plan.rr_ratio))
+        st.write(f"**Stop loss:** {_fmt(trade_plan.stop_loss)}")
+        st.write(f"**Target:** {_fmt(trade_plan.target)}")
+        st.write(f"**Risk/share:** {_fmt(trade_plan.risk_per_share)}")
+        st.write(f"**Reward/share:** {_fmt(trade_plan.reward_per_share)}")
+        st.write(f"**Position size:** {_fmt(trade_plan.position_size_shares)}")
+        st.write(f"**Position value:** {_fmt(trade_plan.position_size_value)}")
+        st.caption(trade_plan.reason)
+
+        with st.expander("Confidence details", expanded=False):
+            st.write(confidence["components"])
+            for note in confidence["notes"]:
+                st.caption(note)
+
+        if enable_alerts and trade_plan.setup not in {"WAIT", "SKIP", "NONE"}:
+            st.warning(f"Scenario alert: {setup_label(trade_plan.setup)} on {symbol}")
 
 except Exception as e:
     st.error(f"Update failed: {e}")

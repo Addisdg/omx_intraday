@@ -2,3 +2,6 @@
 __pycache__/
 *.pyc
 .DS_Store
+.pytest_cache/
+data/cache/*.csv
+config/user_settings.json
