@@ -4,6 +4,7 @@ import streamlit as st
 from streamlit_autorefresh import st_autorefresh
 
 from analysis.confidence import score_setup
+from analysis.data_quality import assess_data_quality
 from analysis.levels import find_levels
 from analysis.market_hours import format_timestamp, market_status
 from analysis.market_structure import classify_structure
@@ -157,6 +158,13 @@ try:
         st.warning("No data returned. Try AAPL, MSFT, NVDA, SPY, BTC-USD, ETH-USD, EURUSD=X.")
         st.stop()
 
+    data_quality = assess_data_quality(df)
+    if data_quality["status"] == "invalid":
+        st.error(data_quality["summary"])
+        for issue in data_quality["issues"]:
+            st.warning(issue)
+        st.stop()
+
     levels = find_levels(df, window=3, tolerance=None, min_touches=2)
     structure = classify_structure(df, lookback=min(30, len(df)))
     signal = classify_signal(df, levels["supports"], levels["resistances"], structure)
@@ -202,6 +210,16 @@ try:
         st.caption(f"Last candle: {latest_timestamp}")
         st.caption(market_status(symbol))
         st.caption("Data source: yfinance intraday data, which may be delayed.")
+        if data_quality["status"] == "ok":
+            st.caption(f"Data quality: {data_quality['summary']} ({data_quality['row_count']} candles)")
+        else:
+            st.warning(f"Data quality: {data_quality['summary']}")
+            with st.expander("Data quality details", expanded=False):
+                st.write(f"**Rows:** {data_quality['row_count']}")
+                st.write(f"**First candle:** {data_quality['first_timestamp']}")
+                st.write(f"**Last candle:** {data_quality['last_timestamp']}")
+                for issue in data_quality["issues"]:
+                    st.write(f"- {issue}")
 
         price_card, signal_card = st.columns(2)
         price_card.metric("Last", f"{latest_close:.2f}", f"Open {latest_open:.2f}")

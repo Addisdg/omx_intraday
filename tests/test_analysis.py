@@ -10,6 +10,7 @@ from analysis.backtest import (
     summarize_by_setup,
 )
 from analysis.confidence import score_setup
+from analysis.data_quality import assess_data_quality
 from analysis.indicators import add_indicators
 from analysis.levels import find_levels
 from analysis.market_hours import format_timestamp, infer_market
@@ -248,6 +249,35 @@ def test_confidence_score_returns_components() -> None:
     assert "reward_risk" in confidence["components"]
 
 
+def test_data_quality_passes_clean_candles() -> None:
+    quality = assess_data_quality(_df([100, 101, 102, 103, 104]))
+
+    assert quality["status"] == "ok"
+    assert quality["row_count"] == 5
+    assert quality["issues"] == []
+
+
+def test_data_quality_warns_on_duplicate_timestamp_and_bad_ohlc() -> None:
+    df = _df([100, 101, 102, 103, 104])
+    df.loc[2, "timestamp"] = df.loc[1, "timestamp"]
+    df.loc[3, "high"] = df.loc[3, "low"] - 1
+    df["volume"] = 0
+
+    quality = assess_data_quality(df)
+
+    assert quality["status"] == "warning"
+    assert any("duplicate timestamp" in issue for issue in quality["issues"])
+    assert any("inconsistent OHLC" in issue for issue in quality["issues"])
+    assert any("Volume is mostly zero" in issue for issue in quality["issues"])
+
+
+def test_data_quality_marks_missing_required_columns_invalid() -> None:
+    quality = assess_data_quality(_df([100, 101, 102]).drop(columns=["close"]))
+
+    assert quality["status"] == "invalid"
+    assert any("Missing required columns" in issue for issue in quality["issues"])
+
+
 def test_setup_label_is_safer_language() -> None:
     assert setup_label("SELL_BREAKDOWN") == "Potential bearish breakdown scenario"
 
@@ -306,6 +336,7 @@ def test_service_analyze_dataframe_returns_current_read() -> None:
 
     assert result["status"] == "ok"
     assert "confidence" in result
+    assert result["data_quality"]["status"] == "ok"
     assert "trade_plan" in result
 
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 import pandas as pd
 
 from analysis.confidence import score_setup
+from analysis.data_quality import assess_data_quality
 from analysis.levels import find_levels
 from analysis.market_structure import classify_structure
 from analysis.research import run_historical_research
@@ -20,8 +21,11 @@ def analyze_dataframe(
     fee_per_trade: float = 0.0,
     slippage_points: float = 0.0,
 ) -> dict:
-    if df.empty:
-        return {"status": "no_data"}
+    data_quality = assess_data_quality(df)
+    if df is None or df.empty:
+        return {"status": "no_data", "data_quality": data_quality}
+    if data_quality["status"] == "invalid":
+        return {"status": "invalid_data", "data_quality": data_quality}
 
     levels = find_levels(df, window=3, tolerance=None, min_touches=2)
     structure = classify_structure(df, lookback=min(30, len(df)))
@@ -49,6 +53,7 @@ def analyze_dataframe(
 
     return {
         "status": "ok",
+        "data_quality": data_quality,
         "last_close": float(df.iloc[-1]["close"]),
         "last_timestamp": str(df.iloc[-1]["timestamp"]),
         "levels": levels,
@@ -103,7 +108,7 @@ def research_dataframe(
         slippage_points=slippage_points,
     )
     if current["status"] != "ok":
-        return {"status": "no_data"}
+        return {"status": current["status"], "data_quality": current.get("data_quality")}
 
     research = run_historical_research(
         df=df,
