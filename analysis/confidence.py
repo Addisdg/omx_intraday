@@ -20,6 +20,7 @@ def score_setup(
     resistances: list[float],
     volume_read: dict,
     timeframe_confirmation: dict | None = None,
+    volatility_regime: dict | None = None,
 ) -> dict:
     if df.empty:
         return {
@@ -59,6 +60,8 @@ def score_setup(
 
     if volume_read.get("volume_state") in {"spike", "above_average"}:
         notes.append(volume_read["reason"])
+    if volatility_regime is not None and volatility_regime.get("volatility_state") in {"quiet", "elevated", "extreme"}:
+        notes.append(volatility_regime["reason"])
     if trade_plan.rr_ratio is not None and trade_plan.rr_ratio >= 2:
         notes.append("Reward/risk passes the minimum filter")
 

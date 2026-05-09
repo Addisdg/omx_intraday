@@ -88,6 +88,7 @@ The right panel gives a plain-language interpretation:
 | `Signal` | A higher-level read, such as bearish bias, bullish bias, breakout, breakdown, fake breakout, or wait. |
 | `Confidence` | A 0-100 score built from trend alignment, level location, R/R, volume, freshness, and optional higher-timeframe confirmation. |
 | `Volume context` | Latest volume compared with recent average volume. |
+| `Volatility context` | Current ATR compared with recent ATR history, labeled as quiet, normal, elevated, or extreme. |
 | `Trade Engine` | A possible plan if conditions meet the strategy rules. |
 | `R/R ratio` | Reward-to-risk ratio based on entry, stop, and target. |
 | `Position size` | Shares/contracts based on portfolio size, risk %, entry, and stop. |
@@ -281,6 +282,8 @@ When `tolerance=None`, the function uses an adaptive tolerance based on recent p
 The score also returns explainable factor details with each factor's score, maximum score, and reason, while preserving the original numeric component map for API compatibility.
 
 When a confirmation timeframe is supplied, `score_setup()` adds an explainable adjustment for aligned, mixed, unknown, or conflicting higher-timeframe structure. This affects confidence only; it does not change the entry, stop, or target rules.
+
+Volatility regime is added as context in confidence notes when ATR is unusually quiet, elevated, or extreme. It does not change entries, stops, targets, or position sizing.
 
 ### `analysis/volume.py`
 
@@ -561,6 +564,7 @@ A trade plan should be read as a scenario, not an instruction. The app does not 
 - Clean chart mode and softer chart overlays.
 - Strategy confidence score.
 - Volume analysis.
+- ATR-based volatility regime context.
 - Saved user settings and watchlist.
 - Backtest equity curve, per-setup stats, date filtering, overlap prevention, and parameter scan.
 

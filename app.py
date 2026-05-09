@@ -11,6 +11,7 @@ from analysis.market_structure import classify_structure
 from analysis.signals import classify_signal
 from analysis.timeframes import build_timeframe_confirmation
 from analysis.trade_engine import build_trade_plan
+from analysis.volatility import analyze_volatility_regime
 from analysis.volume import analyze_volume
 from charts.plotly_chart import build_candlestick_chart
 from config.settings import load_settings, save_settings
@@ -181,6 +182,7 @@ try:
     structure = classify_structure(df, lookback=min(30, len(df)))
     signal = classify_signal(df, levels["supports"], levels["resistances"], structure)
     volume_read = analyze_volume(df)
+    volatility_read = analyze_volatility_regime(df)
     timeframe_confirmation = None
     if confirmation_interval != "None":
         confirmation_df = provider.get_history(
@@ -213,6 +215,7 @@ try:
         levels["resistances"],
         volume_read,
         timeframe_confirmation=timeframe_confirmation,
+        volatility_regime=volatility_read,
     )
 
     latest_close = float(df.iloc[-1]["close"])
@@ -281,6 +284,13 @@ try:
             st.write(f"**Latest volume:** {volume_read['latest_volume']}")
             st.write(f"**Average volume:** {volume_read['average_volume']}")
             st.caption(volume_read["reason"])
+
+        with st.expander("Volatility context", expanded=False):
+            st.write(f"**State:** {volatility_read['volatility_state']}")
+            st.write(f"**ATR ratio:** {volatility_read['atr_ratio']}")
+            st.write(f"**Current ATR:** {_fmt(volatility_read['current_atr'])}")
+            st.write(f"**Baseline ATR:** {_fmt(volatility_read['baseline_atr'])}")
+            st.caption(volatility_read["reason"])
 
         st.subheader("Trade Engine")
         if trade_plan.bias == "BULLISH":

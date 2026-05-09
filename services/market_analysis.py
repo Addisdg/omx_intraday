@@ -10,6 +10,7 @@ from analysis.research import build_similarity_context, run_historical_research
 from analysis.signals import classify_signal
 from analysis.timeframes import build_timeframe_confirmation
 from analysis.trade_engine import build_trade_plan
+from analysis.volatility import analyze_volatility_regime
 from analysis.volume import analyze_volume
 from data.provider_yfinance import YFinanceProvider
 from ui.labels import setup_label, signal_label
@@ -34,6 +35,7 @@ def analyze_dataframe(
     structure = classify_structure(df, lookback=min(30, len(df)))
     signal = classify_signal(df, levels["supports"], levels["resistances"], structure)
     volume = analyze_volume(df)
+    volatility = analyze_volatility_regime(df)
     plan = build_trade_plan(
         df=df,
         structure=structure,
@@ -60,6 +62,7 @@ def analyze_dataframe(
         levels["resistances"],
         volume,
         timeframe_confirmation=timeframe_confirmation,
+        volatility_regime=volatility,
     )
 
     return {
@@ -72,6 +75,7 @@ def analyze_dataframe(
         "signal": signal,
         "signal_label": signal_label(signal["signal"]),
         "volume": volume,
+        "volatility": volatility,
         "timeframe_confirmation": timeframe_confirmation,
         "trade_plan": plan,
         "setup_label": setup_label(plan.setup),

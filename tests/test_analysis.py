@@ -23,6 +23,7 @@ from analysis.research import build_similarity_context, estimate_historical_edge
 from analysis.signals import classify_signal
 from analysis.timeframes import compare_timeframes
 from analysis.trade_engine import TradePlan, build_trade_plan, calculate_position_size
+from analysis.volatility import analyze_volatility_regime
 from analysis.volume import analyze_volume
 from config.settings import load_settings, save_settings
 from data.cache import load_cached_data, save_cached_data
@@ -40,6 +41,22 @@ def _df(closes: list[float]) -> pd.DataFrame:
                 "high": close + 0.5,
                 "low": close - 0.5,
                 "close": close,
+                "volume": 1_000,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def _volatility_df(ranges: list[float]) -> pd.DataFrame:
+    rows = []
+    for idx, candle_range in enumerate(ranges):
+        rows.append(
+            {
+                "timestamp": pd.Timestamp("2026-04-24 09:00") + pd.Timedelta(minutes=idx),
+                "open": 100.0,
+                "high": 100.0 + candle_range / 2,
+                "low": 100.0 - candle_range / 2,
+                "close": 100.0,
                 "volume": 1_000,
             }
         )
@@ -305,6 +322,25 @@ def test_volume_analysis_detects_spike() -> None:
     assert volume["relative_volume"] is not None
 
 
+def test_volatility_regime_detects_quiet_normal_elevated_and_extreme() -> None:
+    quiet = analyze_volatility_regime(_volatility_df([2.0] * 20 + [1.0] * 3), atr_window=3, history_window=20)
+    normal = analyze_volatility_regime(_volatility_df([2.0] * 25), atr_window=3, history_window=20)
+    elevated = analyze_volatility_regime(_volatility_df([2.0] * 20 + [3.0] * 3), atr_window=3, history_window=20)
+    extreme = analyze_volatility_regime(_volatility_df([2.0] * 20 + [5.0] * 3), atr_window=3, history_window=20)
+
+    assert quiet["volatility_state"] == "quiet"
+    assert normal["volatility_state"] == "normal"
+    assert elevated["volatility_state"] == "elevated"
+    assert extreme["volatility_state"] == "extreme"
+
+
+def test_volatility_regime_reports_insufficient_data() -> None:
+    volatility = analyze_volatility_regime(_volatility_df([1.0] * 5), atr_window=14)
+
+    assert volatility["volatility_state"] == "insufficient_data"
+    assert volatility["atr_ratio"] is None
+
+
 def test_confidence_score_returns_components() -> None:
     df = _df([100, 101, 102, 103, 104, 106])
     levels = {"supports": [101.0, 103.0], "resistances": [105.0]}
@@ -353,6 +389,32 @@ def test_confidence_score_explains_cap_when_no_actionable_setup() -> None:
     assert confidence["cap_applied"] is True
     assert confidence["raw_score"] > confidence["score"]
     assert "No actionable setup is active; confidence is capped." in confidence["notes"]
+
+
+def test_confidence_notes_include_volatility_context() -> None:
+    df = _df([100, 101, 102, 103, 104, 106])
+    levels = {"supports": [101.0, 103.0], "resistances": [105.0]}
+    structure = "breakout"
+    signal = classify_signal(df, levels["supports"], levels["resistances"], structure)
+    plan = build_trade_plan(df, structure, levels["supports"], levels["resistances"])
+    volume = analyze_volume(df)
+    volatility = {
+        "volatility_state": "extreme",
+        "reason": "Current ATR is extreme versus recent history",
+    }
+
+    confidence = score_setup(
+        df,
+        structure,
+        signal,
+        plan,
+        levels["supports"],
+        levels["resistances"],
+        volume,
+        volatility_regime=volatility,
+    )
+
+    assert "Current ATR is extreme versus recent history" in confidence["notes"]
 
 
 def test_timeframe_comparison_reports_aligned_and_conflicting_context() -> None:
@@ -603,6 +665,7 @@ def test_service_analyze_dataframe_returns_current_read() -> None:
     assert "confidence" in result
     assert result["data_quality"]["status"] == "ok"
     assert "trade_plan" in result
+    assert "volatility" in result
 
 
 def test_service_analyze_dataframe_returns_timeframe_confirmation() -> None:
