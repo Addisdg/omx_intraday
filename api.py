@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+from dataclasses import asdict, is_dataclass
+import math
+from typing import Literal
+
 from fastapi import FastAPI
-from pydantic import BaseModel
+import pandas as pd
+from pydantic import BaseModel, Field
 
 from data.provider_yfinance import YFinanceProvider
 from services.market_analysis import analyze_symbol, research_dataframe
@@ -9,22 +14,26 @@ from services.market_analysis import analyze_symbol, research_dataframe
 
 app = FastAPI(title="OMX Intraday Analysis API")
 
+Interval = Literal["1m", "2m", "5m", "15m", "30m", "60m", "1d"]
+Period = Literal["1d", "5d", "1mo", "3mo", "6mo", "1y", "2y", "5y"]
+ConfirmationInterval = Literal["15m", "30m", "60m", "1d"]
+
 
 class AnalyzeRequest(BaseModel):
-    symbol: str
-    interval: str = "1m"
-    period: str | None = None
-    confirmation_interval: str | None = None
-    portfolio_size_sek: float = 30_000
-    risk_percent: float = 1.0
-    fee_per_trade: float = 0.0
-    slippage_points: float = 0.0
+    symbol: str = Field(min_length=1, max_length=32)
+    interval: Interval = "1m"
+    period: Period | None = None
+    confirmation_interval: ConfirmationInterval | None = None
+    portfolio_size_sek: float = Field(default=30_000, ge=1_000, le=10_000_000)
+    risk_percent: float = Field(default=1.0, ge=0.1, le=10.0)
+    fee_per_trade: float = Field(default=0.0, ge=0.0, le=10_000.0)
+    slippage_points: float = Field(default=0.0, ge=0.0, le=100.0)
 
 
 class ResearchRequest(AnalyzeRequest):
-    warmup: int = 30
-    max_hold_bars: int = 30
-    train_fraction: float | None = 0.7
+    warmup: int = Field(default=30, ge=10, le=240)
+    max_hold_bars: int = Field(default=30, ge=1, le=500)
+    train_fraction: float | None = Field(default=0.7, gt=0.0, lt=1.0)
 
 
 @app.get("/health")
@@ -75,8 +84,12 @@ def research(request: ResearchRequest) -> dict:
 
 
 def _json_safe(value):
-    if hasattr(value, "__dict__") and not isinstance(value, type):
-        return _json_safe(value.__dict__)
+    if is_dataclass(value) and not isinstance(value, type):
+        return _json_safe(asdict(value))
+    if isinstance(value, pd.DataFrame):
+        return _json_safe(value.to_dict(orient="records"))
+    if isinstance(value, pd.Series):
+        return _json_safe(value.to_dict())
     if isinstance(value, dict):
         return {key: _json_safe(item) for key, item in value.items()}
     if isinstance(value, list):
@@ -85,4 +98,6 @@ def _json_safe(value):
         return [_json_safe(item) for item in value]
     if hasattr(value, "isoformat"):
         return value.isoformat()
+    if isinstance(value, float) and math.isnan(value):
+        return None
     return value

@@ -491,6 +491,8 @@ curl -X POST http://localhost:8000/analyze \
   -d '{"symbol":"AAPL","interval":"15m","period":"1mo"}'
 ```
 
+API requests validate supported intervals, periods, portfolio/risk bounds, fees, slippage, warmup, hold bars, and train/test split fraction before running analysis. Invalid requests return FastAPI validation errors instead of reaching the market-data provider.
+
 Recommended Android path:
 
 1. Keep the analysis engine in Python.

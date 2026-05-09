@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import analysis.backtest as backtest_module
 import pandas as pd
+import pytest
 
 from analysis.backtest import (
     equity_curve,
@@ -633,3 +634,79 @@ def test_run_historical_research_returns_decision() -> None:
 
     assert "probability" in result
     assert "decision" in result
+
+
+def test_api_request_models_validate_intervals_and_risk_bounds() -> None:
+    pytest.importorskip("fastapi")
+    pytest.importorskip("pydantic")
+    from api import AnalyzeRequest, ResearchRequest
+
+    valid = AnalyzeRequest(symbol="AAPL", interval="15m", confirmation_interval="60m")
+
+    assert valid.symbol == "AAPL"
+    with pytest.raises(Exception):
+        AnalyzeRequest(symbol="AAPL", interval="4m")
+    with pytest.raises(Exception):
+        AnalyzeRequest(symbol="AAPL", risk_percent=25)
+    with pytest.raises(Exception):
+        ResearchRequest(symbol="AAPL", train_fraction=1.5)
+
+
+def test_api_json_safe_serializes_contract_shapes() -> None:
+    pytest.importorskip("fastapi")
+    pytest.importorskip("pydantic")
+    from api import _json_safe
+    from analysis.backtest import BacktestSummary
+
+    payload = {
+        "summary": BacktestSummary(1, 1, 0, 0, 1.0, 2.0, 2.0, 0.0),
+        "timestamp": pd.Timestamp("2026-04-24 09:00"),
+        "rows": pd.DataFrame([{"value": 1.0}, {"value": float("nan")}]),
+        "dimensions": ("structure", "volume_state"),
+    }
+
+    safe = _json_safe(payload)
+
+    assert safe["summary"]["trades"] == 1
+    assert safe["timestamp"] == "2026-04-24T09:00:00"
+    assert safe["rows"][1]["value"] is None
+    assert safe["dimensions"] == ["structure", "volume_state"]
+
+
+def test_api_routes_use_validated_contracts(monkeypatch) -> None:
+    pytest.importorskip("fastapi")
+    pytest.importorskip("pydantic")
+    from fastapi.testclient import TestClient
+    import api
+
+    def fake_analyze_symbol(**kwargs) -> dict:
+        return {"status": "ok", "symbol": kwargs["symbol"], "interval": kwargs["interval"]}
+
+    def fake_research_dataframe(df, **kwargs) -> dict:
+        return {
+            "status": "ok",
+            "research": {
+                "trades": pd.DataFrame([{"setup": "BUY_BREAKOUT"}]),
+                "by_setup": pd.DataFrame([{"setup": "BUY_BREAKOUT", "trades": 1}]),
+            },
+        }
+
+    class FakeProvider:
+        def get_history(self, **kwargs):
+            return _df([100, 101, 102])
+
+    monkeypatch.setattr(api, "analyze_symbol", fake_analyze_symbol)
+    monkeypatch.setattr(api, "research_dataframe", fake_research_dataframe)
+    monkeypatch.setattr(api, "YFinanceProvider", FakeProvider)
+
+    client = TestClient(api.app)
+
+    assert client.get("/health").json() == {"status": "ok"}
+    analyze_response = client.post("/analyze", json={"symbol": "AAPL", "interval": "15m"})
+    assert analyze_response.status_code == 200
+    assert analyze_response.json()["interval"] == "15m"
+    assert client.post("/analyze", json={"symbol": "AAPL", "interval": "4m"}).status_code == 422
+
+    research_response = client.post("/research", json={"symbol": "AAPL", "interval": "1d"})
+    assert research_response.status_code == 200
+    assert research_response.json()["research"]["trades"] == [{"setup": "BUY_BREAKOUT"}]
