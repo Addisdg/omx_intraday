@@ -21,6 +21,8 @@ portfolio_size = st.sidebar.number_input("Portfolio size", 1_000, 10_000_000, 30
 risk_percent = st.sidebar.number_input("Risk per trade (%)", 0.1, 10.0, 1.0, 0.1)
 warmup = st.sidebar.slider("Warmup bars", 10, 180, 30)
 max_hold_bars = st.sidebar.slider("Max hold bars", 5, 240, 30)
+run_validation = st.sidebar.checkbox("Run out-of-sample split", value=True)
+train_fraction = st.sidebar.slider("In-sample %", 50, 90, 70, 5) / 100
 fee_per_trade = st.sidebar.number_input("Estimated fee per trade", 0.0, 10_000.0, 0.0, 1.0)
 slippage_points = st.sidebar.number_input("Estimated slippage points", 0.0, 100.0, 0.0, 0.1)
 
@@ -38,6 +40,7 @@ if st.sidebar.button("Run research", type="primary"):
             risk_percent=risk_percent,
             warmup=warmup,
             max_hold_bars=max_hold_bars,
+            train_fraction=train_fraction if run_validation else None,
             fee_per_trade=fee_per_trade,
             slippage_points=slippage_points,
         )
@@ -51,6 +54,7 @@ if st.sidebar.button("Run research", type="primary"):
     summary = research["summary"]
     edge = research["edge"]
     trades = research["trades"]
+    validation = research["validation"]
 
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Current confidence", f"{current['confidence']['score']}/100", current["confidence"]["grade"])
@@ -76,6 +80,17 @@ if st.sidebar.button("Run research", type="primary"):
     c6.metric("All win rate", f"{summary.win_rate:.1%}")
     c7.metric("All total R", f"{summary.total_r:.2f}")
     c8.metric("Max drawdown R", f"{summary.max_drawdown_r:.2f}")
+
+    if validation is not None:
+        st.subheader("Out-Of-Sample Validation")
+        st.caption(validation["verdict"])
+        in_summary = validation["in_sample_summary"]
+        out_summary = validation["out_of_sample_summary"]
+        c9, c10, c11, c12 = st.columns(4)
+        c9.metric("In-sample R", f"{in_summary.total_r:.2f}")
+        c10.metric("Out-of-sample R", f"{out_summary.total_r:.2f}")
+        c11.metric("Out-of-sample trades", out_summary.trades)
+        c12.metric("Split", f"{validation['train_fraction']:.0%}")
 
     if not trades.empty:
         curve = equity_curve(trades)

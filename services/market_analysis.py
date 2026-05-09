@@ -97,6 +97,7 @@ def research_dataframe(
     risk_percent: float = 1.0,
     warmup: int = 30,
     max_hold_bars: int = 30,
+    train_fraction: float | None = 0.7,
     fee_per_trade: float = 0.0,
     slippage_points: float = 0.0,
 ) -> dict:
@@ -118,6 +119,7 @@ def research_dataframe(
         risk_percent=risk_percent,
         warmup=warmup,
         max_hold_bars=max_hold_bars,
+        train_fraction=train_fraction,
         fee_per_trade=fee_per_trade,
         slippage_points=slippage_points,
     )

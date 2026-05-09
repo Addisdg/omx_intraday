@@ -157,6 +157,96 @@ def summarize_by_setup(trades: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(grouped).sort_values("total_r", ascending=False).reset_index(drop=True)
 
 
+def split_train_test(
+    df: pd.DataFrame,
+    train_fraction: float = 0.7,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    if not 0 < train_fraction < 1:
+        raise ValueError("train_fraction must be between 0 and 1")
+    if df.empty:
+        return df.copy(), df.copy()
+
+    split_index = max(1, min(len(df) - 1, int(len(df) * train_fraction)))
+    train = df.iloc[:split_index].reset_index(drop=True)
+    test = df.iloc[split_index:].reset_index(drop=True)
+    return train, test
+
+
+def validate_out_of_sample(
+    df: pd.DataFrame,
+    portfolio_size_sek: float = 30_000,
+    risk_percent: float = 1.0,
+    warmup: int = 30,
+    max_hold_bars: int = 30,
+    train_fraction: float = 0.7,
+    fee_per_trade: float = 0.0,
+    slippage_points: float = 0.0,
+    prevent_overlaps: bool = True,
+    start: pd.Timestamp | None = None,
+    end: pd.Timestamp | None = None,
+) -> dict:
+    filtered = _filter_date_range(df, start, end)
+    train_df, test_df = split_train_test(filtered, train_fraction=train_fraction)
+
+    in_sample_trades = replay_strategy(
+        df=train_df,
+        portfolio_size_sek=portfolio_size_sek,
+        risk_percent=risk_percent,
+        warmup=warmup,
+        max_hold_bars=max_hold_bars,
+        fee_per_trade=fee_per_trade,
+        slippage_points=slippage_points,
+        prevent_overlaps=prevent_overlaps,
+    )
+    out_of_sample_trades = replay_strategy(
+        df=test_df,
+        portfolio_size_sek=portfolio_size_sek,
+        risk_percent=risk_percent,
+        warmup=warmup,
+        max_hold_bars=max_hold_bars,
+        fee_per_trade=fee_per_trade,
+        slippage_points=slippage_points,
+        prevent_overlaps=prevent_overlaps,
+    )
+    in_sample_summary = summarize_backtest(in_sample_trades)
+    out_of_sample_summary = summarize_backtest(out_of_sample_trades)
+
+    return {
+        "train_fraction": train_fraction,
+        "split_index": len(train_df),
+        "split_timestamp": _first_timestamp(test_df),
+        "in_sample_rows": len(train_df),
+        "out_of_sample_rows": len(test_df),
+        "in_sample_summary": in_sample_summary,
+        "out_of_sample_summary": out_of_sample_summary,
+        "verdict": _out_of_sample_verdict(
+            in_sample_summary=in_sample_summary,
+            out_of_sample_summary=out_of_sample_summary,
+            out_of_sample_rows=len(test_df),
+            warmup=warmup,
+        ),
+    }
+
+
+def _out_of_sample_verdict(
+    in_sample_summary: BacktestSummary,
+    out_of_sample_summary: BacktestSummary,
+    out_of_sample_rows: int,
+    warmup: int,
+) -> str:
+    if out_of_sample_rows <= warmup:
+        return "Not enough out-of-sample candles after the split"
+    if out_of_sample_summary.trades == 0:
+        return "No out-of-sample setups were generated"
+    if in_sample_summary.total_r > 0 and out_of_sample_summary.total_r > 0:
+        return "Out-of-sample validation supports the in-sample result"
+    if in_sample_summary.total_r > 0 and out_of_sample_summary.total_r <= 0:
+        return "In-sample edge did not hold out of sample"
+    if out_of_sample_summary.total_r > 0:
+        return "Out-of-sample result is positive, but in-sample edge was weak"
+    return "No positive out-of-sample validation detected"
+
+
 def optimize_parameters(
     df: pd.DataFrame,
     portfolio_size_sek: float,

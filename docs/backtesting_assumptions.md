@@ -21,6 +21,12 @@ The `timestamp` column on a replayed trade is the decision candle timestamp, not
 
 This does not make a backtest predictive. It only documents and tests the replay-time data boundary.
 
+## Out-Of-Sample Validation
+
+The out-of-sample split is chronological. The earlier window is treated as in-sample context, and the later window is replayed separately with the same fixed strategy parameters.
+
+This is not parameter optimization. It is a stability check: if a setup looks good in the full replay but weakens in the later window, the app should treat the historical edge more cautiously.
+
 Backtest results still depend on:
 
 - Data quality and provider limitations.
@@ -30,4 +36,3 @@ Backtest results still depend on:
 - Sample size and market regime stability.
 
 Treat replay results as technical research context, not as proof that a setup will work in the future.
-

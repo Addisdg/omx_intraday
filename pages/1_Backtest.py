@@ -10,6 +10,7 @@ from analysis.backtest import (
     replay_strategy,
     summarize_backtest,
     summarize_by_setup,
+    validate_out_of_sample,
 )
 from data.cache import load_cached_data
 from data.provider_yfinance import YFinanceProvider
@@ -32,6 +33,8 @@ slippage_points = st.sidebar.number_input("Estimated slippage points", 0.0, 100.
 start_text = st.sidebar.text_input("Start date/time (optional)", value="")
 end_text = st.sidebar.text_input("End date/time (optional)", value="")
 run_optimization = st.sidebar.checkbox("Run small parameter scan", value=False)
+run_validation = st.sidebar.checkbox("Run out-of-sample split", value=True)
+train_fraction = st.sidebar.slider("In-sample %", 50, 90, 70, 5) / 100
 
 
 def _parse_optional_timestamp(value: str) -> pd.Timestamp | None:
@@ -67,6 +70,21 @@ if st.sidebar.button("Run backtest", type="primary"):
             end=end,
         )
         summary = summarize_backtest(trades)
+        validation = None
+        if run_validation:
+            validation = validate_out_of_sample(
+                df=df,
+                portfolio_size_sek=portfolio_size,
+                risk_percent=risk_percent,
+                warmup=warmup,
+                max_hold_bars=max_hold_bars,
+                train_fraction=train_fraction,
+                fee_per_trade=fee_per_trade,
+                slippage_points=slippage_points,
+                prevent_overlaps=prevent_overlaps,
+                start=start,
+                end=end,
+            )
 
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Trades", summary.trades)
@@ -79,6 +97,38 @@ if st.sidebar.button("Run backtest", type="primary"):
     c6.metric("Losses", summary.losses)
     c7.metric("Open", summary.open_trades)
     c8.metric("Average R/R", "N/A" if summary.average_rr is None else f"{summary.average_rr:.2f}")
+
+    if validation is not None:
+        st.subheader("Out-Of-Sample Validation")
+        st.caption(validation["verdict"])
+        split_text = "N/A" if validation["split_timestamp"] is None else str(validation["split_timestamp"])
+        st.write(
+            f"Split at {split_text}; "
+            f"{validation['in_sample_rows']} in-sample candles and "
+            f"{validation['out_of_sample_rows']} out-of-sample candles."
+        )
+
+        in_summary = validation["in_sample_summary"]
+        out_summary = validation["out_of_sample_summary"]
+        validation_rows = pd.DataFrame(
+            [
+                {
+                    "sample": "In-sample",
+                    "trades": in_summary.trades,
+                    "win_rate": in_summary.win_rate,
+                    "total_r": in_summary.total_r,
+                    "max_drawdown_r": in_summary.max_drawdown_r,
+                },
+                {
+                    "sample": "Out-of-sample",
+                    "trades": out_summary.trades,
+                    "win_rate": out_summary.win_rate,
+                    "total_r": out_summary.total_r,
+                    "max_drawdown_r": out_summary.max_drawdown_r,
+                },
+            ]
+        )
+        st.dataframe(validation_rows, use_container_width=True, hide_index=True)
 
     if trades.empty:
         st.info("No qualifying setups were found in this replay.")

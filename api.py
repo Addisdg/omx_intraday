@@ -23,6 +23,7 @@ class AnalyzeRequest(BaseModel):
 class ResearchRequest(AnalyzeRequest):
     warmup: int = 30
     max_hold_bars: int = 30
+    train_fraction: float | None = 0.7
 
 
 @app.get("/health")
@@ -59,6 +60,7 @@ def research(request: ResearchRequest) -> dict:
         risk_percent=request.risk_percent,
         warmup=request.warmup,
         max_hold_bars=request.max_hold_bars,
+        train_fraction=request.train_fraction,
         fee_per_trade=request.fee_per_trade,
         slippage_points=request.slippage_points,
     )

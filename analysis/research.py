@@ -9,6 +9,7 @@ from analysis.backtest import (
     replay_strategy,
     summarize_backtest,
     summarize_by_setup,
+    validate_out_of_sample,
 )
 
 
@@ -81,6 +82,7 @@ def run_historical_research(
     risk_percent: float = 1.0,
     warmup: int = 30,
     max_hold_bars: int = 30,
+    train_fraction: float | None = 0.7,
     fee_per_trade: float = 0.0,
     slippage_points: float = 0.0,
 ) -> dict:
@@ -98,6 +100,21 @@ def run_historical_research(
     by_setup = summarize_by_setup(trades)
     edge = estimate_historical_edge(trades, current_setup)
     probability = probability_from_edge(edge, confidence_score)
+    validation = (
+        validate_out_of_sample(
+            df=df,
+            portfolio_size_sek=portfolio_size_sek,
+            risk_percent=risk_percent,
+            warmup=warmup,
+            max_hold_bars=max_hold_bars,
+            train_fraction=train_fraction,
+            fee_per_trade=fee_per_trade,
+            slippage_points=slippage_points,
+            prevent_overlaps=True,
+        )
+        if train_fraction is not None
+        else None
+    )
 
     return {
         "trades": trades,
@@ -105,7 +122,8 @@ def run_historical_research(
         "by_setup": by_setup,
         "edge": edge,
         "probability": probability,
-        "decision": decision_label(probability, edge, summary),
+        "validation": validation,
+        "decision": decision_label(probability, edge, summary, validation),
     }
 
 
@@ -113,9 +131,14 @@ def decision_label(
     probability: int,
     edge: HistoricalEdge,
     summary: BacktestSummary,
+    validation: dict | None = None,
 ) -> str:
     if edge.sample_size < 5:
         return "Research only: not enough similar history"
+    if validation is not None:
+        out_summary = validation["out_of_sample_summary"]
+        if summary.total_r > 0 and out_summary.trades > 0 and out_summary.total_r <= 0:
+            return "Research only: edge did not hold out of sample"
     if probability >= 65 and summary.total_r > 0:
         return "Watchlist candidate: historical edge is positive"
     if probability <= 40 or (edge.average_r is not None and edge.average_r <= 0):

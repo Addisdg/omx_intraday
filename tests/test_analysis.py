@@ -7,8 +7,10 @@ from analysis.backtest import (
     equity_curve,
     optimize_parameters,
     replay_strategy,
+    split_train_test,
     summarize_backtest,
     summarize_by_setup,
+    validate_out_of_sample,
 )
 from analysis.confidence import score_setup
 from analysis.data_quality import assess_data_quality
@@ -376,6 +378,43 @@ def test_backtest_extra_summaries_and_optimization() -> None:
     assert len(scan) == 2
 
 
+def test_train_test_split_preserves_chronological_order() -> None:
+    df = _df(list(range(100, 110)))
+
+    train, test = split_train_test(df, train_fraction=0.6)
+
+    assert len(train) == 6
+    assert len(test) == 4
+    assert train.iloc[-1]["timestamp"] < test.iloc[0]["timestamp"]
+
+
+def test_out_of_sample_validation_returns_split_summaries(monkeypatch) -> None:
+    df = _df(list(range(100, 120)))
+
+    def fake_replay_strategy(df: pd.DataFrame, **kwargs) -> pd.DataFrame:
+        return pd.DataFrame(
+            [
+                {
+                    "timestamp": df.iloc[-2]["timestamp"],
+                    "setup": "BUY_BREAKOUT",
+                    "outcome": "target",
+                    "r_multiple": 1.5,
+                    "rr_ratio": 2.0,
+                }
+            ]
+        )
+
+    monkeypatch.setattr(backtest_module, "replay_strategy", fake_replay_strategy)
+
+    validation = validate_out_of_sample(df, train_fraction=0.5, warmup=3, max_hold_bars=2)
+
+    assert validation["split_index"] == 10
+    assert validation["split_timestamp"] == df.iloc[10]["timestamp"]
+    assert validation["in_sample_summary"].trades == 1
+    assert validation["out_of_sample_summary"].trades == 1
+    assert validation["verdict"] == "Out-of-sample validation supports the in-sample result"
+
+
 def test_research_edge_and_probability() -> None:
     trades = pd.DataFrame(
         [
@@ -412,6 +451,7 @@ def test_service_research_dataframe_returns_research_bundle() -> None:
     assert result["status"] == "ok"
     assert "current" in result
     assert "research" in result
+    assert "validation" in result["research"]
 
 
 def test_run_historical_research_returns_decision() -> None:
