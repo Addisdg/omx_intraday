@@ -265,7 +265,20 @@ try:
         st.caption(trade_plan.reason)
 
         with st.expander("Confidence details", expanded=False):
-            st.write(confidence["components"])
+            factor_rows = [
+                {
+                    "Factor": name.replace("_", " ").title(),
+                    "Score": f"{factor['score']}/{factor['max_score']}",
+                    "Reason": factor["reason"],
+                }
+                for name, factor in confidence.get("factors", {}).items()
+            ]
+            if factor_rows:
+                st.dataframe(factor_rows, use_container_width=True, hide_index=True)
+            else:
+                st.write(confidence["components"])
+            if confidence.get("cap_applied"):
+                st.caption(f"Raw score {confidence['raw_score']} was capped because no actionable setup is active.")
             for note in confidence["notes"]:
                 st.caption(note)
 

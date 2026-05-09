@@ -277,6 +277,8 @@ When `tolerance=None`, the function uses an adaptive tolerance based on recent p
 - Volume confirmation.
 - Signal/setup freshness.
 
+The score also returns explainable factor details with each factor's score, maximum score, and reason, while preserving the original numeric component map for API compatibility.
+
 ### `analysis/volume.py`
 
 `analyze_volume()` compares the latest candle volume to recent average volume and labels it as `spike`, `above_average`, `normal`, `quiet`, or `unknown`.

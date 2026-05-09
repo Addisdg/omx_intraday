@@ -313,6 +313,42 @@ def test_confidence_score_returns_components() -> None:
 
     assert 0 <= confidence["score"] <= 100
     assert "reward_risk" in confidence["components"]
+    assert "reward_risk" in confidence["factors"]
+    assert confidence["factors"]["reward_risk"]["max_score"] == 22
+    assert confidence["factors"]["reward_risk"]["reason"]
+
+
+def test_confidence_score_explains_cap_when_no_actionable_setup() -> None:
+    df = _df([100, 101, 102, 103, 104, 105])
+    plan = TradePlan(
+        bias="NEUTRAL",
+        setup="WAIT",
+        entry=None,
+        stop_loss=None,
+        target=None,
+        risk_per_share=None,
+        reward_per_share=None,
+        rr_ratio=None,
+        position_size_shares=None,
+        position_size_value=None,
+        reason="No clean trade setup right now",
+    )
+    volume = {"volume_state": "spike", "reason": "Volume spike", "relative_volume": 3.0}
+
+    confidence = score_setup(
+        df=df,
+        structure="uptrend",
+        signal={"signal": "WAIT FOR PULLBACK"},
+        trade_plan=plan,
+        supports=[104.9],
+        resistances=[106.0],
+        volume_read=volume,
+    )
+
+    assert confidence["score"] <= 55
+    assert confidence["cap_applied"] is True
+    assert confidence["raw_score"] > confidence["score"]
+    assert "No actionable setup is active; confidence is capped." in confidence["notes"]
 
 
 def test_data_quality_passes_clean_candles() -> None:
