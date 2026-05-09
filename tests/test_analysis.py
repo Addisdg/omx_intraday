@@ -18,7 +18,7 @@ from analysis.indicators import add_indicators
 from analysis.levels import find_levels
 from analysis.market_hours import format_timestamp, infer_market
 from analysis.market_structure import classify_structure
-from analysis.research import estimate_historical_edge, probability_from_edge, run_historical_research
+from analysis.research import build_similarity_context, estimate_historical_edge, probability_from_edge, run_historical_research
 from analysis.signals import classify_signal
 from analysis.timeframes import compare_timeframes
 from analysis.trade_engine import TradePlan, build_trade_plan, calculate_position_size
@@ -227,6 +227,8 @@ def test_backtest_replay_returns_summary() -> None:
     summary = summarize_backtest(trades)
 
     assert summary.trades == len(trades)
+    if not trades.empty:
+        assert {"structure", "volume_state", "confidence_bucket", "rr_bucket", "trend_bias"}.issubset(trades.columns)
 
 
 def test_backtest_replay_decision_pipeline_uses_history_only(monkeypatch) -> None:
@@ -506,6 +508,91 @@ def test_research_edge_and_probability() -> None:
     assert edge.sample_size == 5
     assert edge.win_rate == 0.8
     assert probability > 50
+
+
+def test_historical_edge_uses_contextual_similarity_when_sample_is_large_enough() -> None:
+    trades = pd.DataFrame(
+        [
+            {
+                "setup": "BUY_BREAKOUT",
+                "structure": "breakout",
+                "trend_bias": "BULLISH",
+                "volume_state": "spike",
+                "rr_bucket": "acceptable",
+                "confidence_bucket": "high",
+                "outcome": "target",
+                "r_multiple": 2.0,
+            },
+            {
+                "setup": "BUY_BREAKOUT",
+                "structure": "breakout",
+                "trend_bias": "BULLISH",
+                "volume_state": "spike",
+                "rr_bucket": "acceptable",
+                "confidence_bucket": "high",
+                "outcome": "stop",
+                "r_multiple": -1.0,
+            },
+            {
+                "setup": "BUY_BREAKOUT",
+                "structure": "downtrend",
+                "trend_bias": "BEARISH",
+                "volume_state": "quiet",
+                "rr_bucket": "weak",
+                "confidence_bucket": "low",
+                "outcome": "stop",
+                "r_multiple": -1.0,
+            },
+        ]
+    )
+    context = {
+        "structure": "breakout",
+        "trend_bias": "BULLISH",
+        "volume_state": "spike",
+        "rr_bucket": "acceptable",
+        "confidence_bucket": "high",
+    }
+
+    edge = estimate_historical_edge(trades, "BUY_BREAKOUT", context=context, min_sample=2)
+
+    assert edge.sample_size == 2
+    assert edge.matched_dimensions == ("structure", "trend_bias", "volume_state", "rr_bucket", "confidence_bucket")
+    assert edge.match_description == "setup + structure + trend bias + volume state + rr bucket + confidence bucket"
+
+
+def test_historical_edge_falls_back_when_strict_similarity_has_too_few_samples() -> None:
+    trades = pd.DataFrame(
+        [
+            {"setup": "BUY_BREAKOUT", "structure": "breakout", "outcome": "target", "r_multiple": 2.0},
+            {"setup": "BUY_BREAKOUT", "structure": "downtrend", "outcome": "stop", "r_multiple": -1.0},
+            {"setup": "BUY_BREAKOUT", "structure": "range", "outcome": "timeout", "r_multiple": 0.2},
+        ]
+    )
+
+    edge = estimate_historical_edge(
+        trades,
+        "BUY_BREAKOUT",
+        context={"structure": "breakout"},
+        min_sample=2,
+    )
+
+    assert edge.sample_size == 3
+    assert edge.matched_dimensions == ()
+    assert edge.match_description == "setup only"
+
+
+def test_similarity_context_builds_buckets() -> None:
+    context = build_similarity_context(
+        setup="BUY_BREAKOUT",
+        structure="breakout",
+        confidence_score=82,
+        volume_state="spike",
+        rr_ratio=2.4,
+    )
+
+    assert context["trend_bias"] == "BULLISH"
+    assert context["confidence_bucket"] == "high"
+    assert context["rr_bucket"] == "acceptable"
 
 
 def test_service_analyze_dataframe_returns_current_read() -> None:

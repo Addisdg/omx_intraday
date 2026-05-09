@@ -6,11 +6,14 @@ import pandas as pd
 
 from analysis.backtest import (
     BacktestSummary,
+    confidence_bucket,
     replay_strategy,
+    rr_bucket,
     summarize_backtest,
     summarize_by_setup,
     validate_out_of_sample,
 )
+from analysis.timeframes import bias_from_structure
 
 
 @dataclass(frozen=True)
@@ -21,17 +24,23 @@ class HistoricalEdge:
     average_r: float | None
     total_r: float | None
     verdict: str
+    matched_dimensions: tuple[str, ...] = ()
+    match_description: str = "setup only"
+
+
+SIMILARITY_DIMENSIONS = ("structure", "trend_bias", "volume_state", "rr_bucket", "confidence_bucket")
 
 
 def estimate_historical_edge(
     trades: pd.DataFrame,
     setup: str,
+    context: dict | None = None,
     min_sample: int = 5,
 ) -> HistoricalEdge:
     if trades.empty or setup in {"WAIT", "SKIP", "NONE"}:
         return HistoricalEdge(setup, 0, None, None, None, "No active setup to compare")
 
-    similar = trades[trades["setup"] == setup]
+    similar, matched_dimensions = _select_similar_trades(trades, setup, context, min_sample)
     if similar.empty:
         return HistoricalEdge(setup, 0, None, None, None, "No matching historical setups")
 
@@ -61,6 +70,8 @@ def estimate_historical_edge(
         average_r=average_r,
         total_r=total_r,
         verdict=verdict,
+        matched_dimensions=matched_dimensions,
+        match_description=_match_description(matched_dimensions),
     )
 
 
@@ -78,6 +89,7 @@ def run_historical_research(
     df: pd.DataFrame,
     current_setup: str,
     confidence_score: int,
+    current_context: dict | None = None,
     portfolio_size_sek: float = 30_000,
     risk_percent: float = 1.0,
     warmup: int = 30,
@@ -98,7 +110,11 @@ def run_historical_research(
     )
     summary = summarize_backtest(trades)
     by_setup = summarize_by_setup(trades)
-    edge = estimate_historical_edge(trades, current_setup)
+    context = current_context or build_similarity_context(
+        setup=current_setup,
+        confidence_score=confidence_score,
+    )
+    edge = estimate_historical_edge(trades, current_setup, context=context)
     probability = probability_from_edge(edge, confidence_score)
     validation = (
         validate_out_of_sample(
@@ -121,6 +137,7 @@ def run_historical_research(
         "summary": summary,
         "by_setup": by_setup,
         "edge": edge,
+        "similarity_context": context,
         "probability": probability,
         "validation": validation,
         "decision": decision_label(probability, edge, summary, validation),
@@ -144,3 +161,56 @@ def decision_label(
     if probability <= 40 or (edge.average_r is not None and edge.average_r <= 0):
         return "Avoid or wait: historical edge is weak"
     return "Neutral: wait for stronger confirmation"
+
+
+def build_similarity_context(
+    setup: str,
+    structure: str | None = None,
+    confidence_score: int | float | None = None,
+    volume_state: str | None = None,
+    rr_ratio: float | None = None,
+) -> dict:
+    context = {"setup": setup}
+    if structure is not None:
+        context["structure"] = structure
+        context["trend_bias"] = bias_from_structure(structure)
+    if volume_state is not None:
+        context["volume_state"] = volume_state
+    if rr_ratio is not None:
+        context["rr_bucket"] = rr_bucket(rr_ratio)
+    if confidence_score is not None:
+        context["confidence_bucket"] = confidence_bucket(confidence_score)
+    return context
+
+
+def _select_similar_trades(
+    trades: pd.DataFrame,
+    setup: str,
+    context: dict | None,
+    min_sample: int,
+) -> tuple[pd.DataFrame, tuple[str, ...]]:
+    setup_matches = trades[trades["setup"] == setup]
+    if setup_matches.empty or not context:
+        return setup_matches, ()
+
+    available_dimensions = tuple(
+        dimension
+        for dimension in SIMILARITY_DIMENSIONS
+        if dimension in setup_matches.columns and context.get(dimension) is not None
+    )
+    for keep_count in range(len(available_dimensions), 0, -1):
+        dimensions = available_dimensions[:keep_count]
+        candidate = setup_matches.copy()
+        for dimension in dimensions:
+            candidate = candidate[candidate[dimension] == context[dimension]]
+        closed_count = int(candidate["outcome"].isin(["target", "stop", "timeout"]).sum()) if "outcome" in candidate else 0
+        if closed_count >= min_sample:
+            return candidate, dimensions
+
+    return setup_matches, ()
+
+
+def _match_description(dimensions: tuple[str, ...]) -> str:
+    if not dimensions:
+        return "setup only"
+    return "setup + " + " + ".join(dimension.replace("_", " ") for dimension in dimensions)

@@ -56,6 +56,7 @@ def screen_symbol(symbol: str) -> dict:
         "confidence": confidence,
         "historical_probability": probability,
         "similar_samples": edge.sample_size,
+        "matched_by": edge.match_description,
         "similar_win_rate": None if edge.win_rate is None else round(edge.win_rate, 3),
         "average_r": None if edge.average_r is None else round(edge.average_r, 3),
         "total_r": round(total_r, 3),

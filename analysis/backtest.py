@@ -4,9 +4,13 @@ from dataclasses import dataclass
 
 import pandas as pd
 
+from analysis.confidence import score_setup
 from analysis.levels import find_levels
 from analysis.market_structure import classify_structure
+from analysis.signals import classify_signal
+from analysis.timeframes import bias_from_structure
 from analysis.trade_engine import TradePlan, build_trade_plan
+from analysis.volume import analyze_volume
 
 
 @dataclass(frozen=True)
@@ -44,6 +48,8 @@ def replay_strategy(
         future_window = df.iloc[idx + 1 : idx + 1 + max_hold_bars]
         levels = find_levels(history, window=3, tolerance=None, min_touches=2)
         structure = classify_structure(history, lookback=min(30, len(history)))
+        signal = classify_signal(history, levels["supports"], levels["resistances"], structure)
+        volume_read = analyze_volume(history)
         plan = build_trade_plan(
             df=history,
             structure=structure,
@@ -59,6 +65,15 @@ def replay_strategy(
             idx += 1
             continue
 
+        confidence = score_setup(
+            history,
+            structure,
+            signal,
+            plan,
+            levels["supports"],
+            levels["resistances"],
+            volume_read,
+        )
         outcome = _resolve_trade(
             plan=plan,
             future=future_window,
@@ -74,6 +89,13 @@ def replay_strategy(
                 "first_resolution_timestamp": _first_timestamp(future_window),
                 "bias": plan.bias,
                 "setup": plan.setup,
+                "structure": structure,
+                "signal": signal["signal"],
+                "trend_bias": bias_from_structure(structure),
+                "volume_state": volume_read["volume_state"],
+                "confidence_score": confidence["score"],
+                "confidence_bucket": confidence_bucket(confidence["score"]),
+                "rr_bucket": rr_bucket(plan.rr_ratio),
                 "entry": plan.entry,
                 "stop_loss": plan.stop_loss,
                 "target": plan.target,
@@ -92,6 +114,30 @@ def replay_strategy(
             idx += 1
 
     return pd.DataFrame(records)
+
+
+def confidence_bucket(score: int | float | None) -> str:
+    if score is None:
+        return "unknown"
+    if score >= 80:
+        return "high"
+    if score >= 60:
+        return "moderate"
+    if score >= 40:
+        return "low"
+    return "very_low"
+
+
+def rr_bucket(rr_ratio: float | None) -> str:
+    if rr_ratio is None:
+        return "unknown"
+    if rr_ratio >= 3:
+        return "strong"
+    if rr_ratio >= 2:
+        return "acceptable"
+    if rr_ratio >= 1.5:
+        return "marginal"
+    return "weak"
 
 
 def _first_timestamp(df: pd.DataFrame) -> pd.Timestamp | None:

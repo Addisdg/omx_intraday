@@ -74,6 +74,7 @@ if st.sidebar.button("Run research", type="primary"):
     st.write(f"**Win rate:** {'N/A' if edge.win_rate is None else f'{edge.win_rate:.1%}'}")
     st.write(f"**Average R:** {'N/A' if edge.average_r is None else f'{edge.average_r:.2f}'}")
     st.write(f"**Total R:** {'N/A' if edge.total_r is None else f'{edge.total_r:.2f}'}")
+    st.write(f"**Matched by:** {edge.match_description}")
 
     c5, c6, c7, c8 = st.columns(4)
     c5.metric("All trades", summary.trades)

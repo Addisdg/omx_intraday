@@ -6,7 +6,7 @@ from analysis.confidence import score_setup
 from analysis.data_quality import assess_data_quality
 from analysis.levels import find_levels
 from analysis.market_structure import classify_structure
-from analysis.research import run_historical_research
+from analysis.research import build_similarity_context, run_historical_research
 from analysis.signals import classify_signal
 from analysis.timeframes import build_timeframe_confirmation
 from analysis.trade_engine import build_trade_plan
@@ -147,6 +147,13 @@ def research_dataframe(
         df=df,
         current_setup=current["trade_plan"].setup,
         confidence_score=current["confidence"]["score"],
+        current_context=build_similarity_context(
+            setup=current["trade_plan"].setup,
+            structure=current["structure"],
+            confidence_score=current["confidence"]["score"],
+            volume_state=current["volume"]["volume_state"],
+            rr_ratio=current["trade_plan"].rr_ratio,
+        ),
         portfolio_size_sek=portfolio_size_sek,
         risk_percent=risk_percent,
         warmup=warmup,

@@ -465,6 +465,8 @@ This page is meant for the question: “Has this type of setup worked before?”
 
 It does not predict the future directly. Instead, it compares the current setup with similar historical setups from the replay engine and reports a probability-style estimate. This is safer than a raw buy/sell label because it makes sample size and historical edge visible.
 
+Similarity starts with setup type, then attempts to match context such as structure, trend bias, volume state, R/R bucket, and confidence bucket. If strict matching leaves too few samples, research falls back toward setup-only matching and shows what dimensions were actually used.
+
 ## Stock Screening
 
 Open `Stock Screener` in the Streamlit sidebar.
