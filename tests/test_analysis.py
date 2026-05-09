@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import analysis.backtest as backtest_module
 import pandas as pd
 
 from analysis.backtest import (
@@ -17,7 +18,7 @@ from analysis.market_hours import format_timestamp, infer_market
 from analysis.market_structure import classify_structure
 from analysis.research import estimate_historical_edge, probability_from_edge, run_historical_research
 from analysis.signals import classify_signal
-from analysis.trade_engine import build_trade_plan, calculate_position_size
+from analysis.trade_engine import TradePlan, build_trade_plan, calculate_position_size
 from analysis.volume import analyze_volume
 from config.settings import load_settings, save_settings
 from data.cache import load_cached_data, save_cached_data
@@ -223,6 +224,69 @@ def test_backtest_replay_returns_summary() -> None:
     summary = summarize_backtest(trades)
 
     assert summary.trades == len(trades)
+
+
+def test_backtest_replay_decision_pipeline_uses_history_only(monkeypatch) -> None:
+    all_candles = _df(list(range(100, 110)))
+    observed_decision_timestamps = []
+
+    def fake_find_levels(history: pd.DataFrame, **kwargs) -> dict:
+        assert history["timestamp"].max() < all_candles.iloc[len(history)]["timestamp"]
+        return {"supports": [], "resistances": []}
+
+    def fake_classify_structure(history: pd.DataFrame, **kwargs) -> str:
+        assert history["timestamp"].max() < all_candles.iloc[len(history)]["timestamp"]
+        return "range"
+
+    def fake_build_trade_plan(df: pd.DataFrame, **kwargs) -> TradePlan:
+        observed_decision_timestamps.append(df.iloc[-1]["timestamp"])
+        assert df["timestamp"].max() < all_candles.iloc[len(df)]["timestamp"]
+        return TradePlan("NEUTRAL", "WAIT", None, None, None, None, None, None, None, None, "test")
+
+    monkeypatch.setattr(backtest_module, "find_levels", fake_find_levels)
+    monkeypatch.setattr(backtest_module, "classify_structure", fake_classify_structure)
+    monkeypatch.setattr(backtest_module, "build_trade_plan", fake_build_trade_plan)
+
+    trades = replay_strategy(all_candles, warmup=3, max_hold_bars=2)
+
+    assert trades.empty
+    assert observed_decision_timestamps == [
+        all_candles.iloc[idx]["timestamp"] for idx in range(3, len(all_candles) - 1)
+    ]
+
+
+def test_backtest_replay_records_anti_lookahead_audit_timestamps(monkeypatch) -> None:
+    all_candles = _df(list(range(100, 110)))
+
+    def fake_build_trade_plan(df: pd.DataFrame, **kwargs) -> TradePlan:
+        entry = float(df.iloc[-1]["close"])
+        return TradePlan(
+            bias="BULLISH",
+            setup="BUY_BREAKOUT",
+            entry=entry,
+            stop_loss=entry - 1,
+            target=entry + 0.2,
+            risk_per_share=1,
+            reward_per_share=0.2,
+            rr_ratio=0.2,
+            position_size_shares=1,
+            position_size_value=entry,
+            reason="test plan",
+        )
+
+    monkeypatch.setattr(backtest_module, "find_levels", lambda *args, **kwargs: {"supports": [], "resistances": []})
+    monkeypatch.setattr(backtest_module, "classify_structure", lambda *args, **kwargs: "breakout")
+    monkeypatch.setattr(backtest_module, "build_trade_plan", fake_build_trade_plan)
+
+    trades = replay_strategy(all_candles, warmup=3, max_hold_bars=2, prevent_overlaps=True)
+    first_trade = trades.iloc[0]
+
+    assert first_trade["decision_index"] == 3
+    assert first_trade["timestamp"] == all_candles.iloc[3]["timestamp"]
+    assert first_trade["history_start_timestamp"] == all_candles.iloc[0]["timestamp"]
+    assert first_trade["history_end_timestamp"] == all_candles.iloc[3]["timestamp"]
+    assert first_trade["first_resolution_timestamp"] == all_candles.iloc[4]["timestamp"]
+    assert first_trade["first_resolution_timestamp"] > first_trade["history_end_timestamp"]
 
 
 def test_volume_analysis_detects_spike() -> None:

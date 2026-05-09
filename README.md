@@ -436,6 +436,8 @@ python -m pytest -q
 
 Open the Streamlit sidebar navigation and choose `Backtest`.
 
+Backtest replay uses an explicit anti-look-ahead boundary: setup decisions are made from candles up to the decision timestamp, and outcomes are resolved only from later candles. See `docs/backtesting_assumptions.md` for the detailed contract and remaining limitations.
+
 The page can:
 
 - Download latest data and save it to `data/cache/`.

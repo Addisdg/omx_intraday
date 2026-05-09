@@ -41,6 +41,7 @@ def replay_strategy(
     idx = warmup
     while idx < len(df) - 1:
         history = df.iloc[: idx + 1].reset_index(drop=True)
+        future_window = df.iloc[idx + 1 : idx + 1 + max_hold_bars]
         levels = find_levels(history, window=3, tolerance=None, min_touches=2)
         structure = classify_structure(history, lookback=min(30, len(history)))
         plan = build_trade_plan(
@@ -60,13 +61,17 @@ def replay_strategy(
 
         outcome = _resolve_trade(
             plan=plan,
-            future=df.iloc[idx + 1 : idx + 1 + max_hold_bars],
+            future=future_window,
             fee_per_trade=fee_per_trade,
             slippage_points=slippage_points,
         )
         records.append(
             {
                 "timestamp": history.iloc[-1]["timestamp"],
+                "decision_index": idx,
+                "history_start_timestamp": history.iloc[0]["timestamp"],
+                "history_end_timestamp": history.iloc[-1]["timestamp"],
+                "first_resolution_timestamp": _first_timestamp(future_window),
                 "bias": plan.bias,
                 "setup": plan.setup,
                 "entry": plan.entry,
@@ -87,6 +92,12 @@ def replay_strategy(
             idx += 1
 
     return pd.DataFrame(records)
+
+
+def _first_timestamp(df: pd.DataFrame) -> pd.Timestamp | None:
+    if df.empty or "timestamp" not in df:
+        return None
+    return df.iloc[0]["timestamp"]
 
 
 def summarize_backtest(trades: pd.DataFrame) -> BacktestSummary:
