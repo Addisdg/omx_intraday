@@ -8,6 +8,7 @@ from analysis.levels import find_levels
 from analysis.market_structure import classify_structure
 from analysis.research import run_historical_research
 from analysis.signals import classify_signal
+from analysis.timeframes import build_timeframe_confirmation
 from analysis.trade_engine import build_trade_plan
 from analysis.volume import analyze_volume
 from data.provider_yfinance import YFinanceProvider
@@ -20,6 +21,8 @@ def analyze_dataframe(
     risk_percent: float = 1.0,
     fee_per_trade: float = 0.0,
     slippage_points: float = 0.0,
+    confirmation_df: pd.DataFrame | None = None,
+    confirmation_interval: str | None = None,
 ) -> dict:
     data_quality = assess_data_quality(df)
     if df is None or df.empty:
@@ -41,6 +44,13 @@ def analyze_dataframe(
         fee_per_trade=fee_per_trade,
         slippage_points=slippage_points,
     )
+    timeframe_confirmation = None
+    if confirmation_df is not None or confirmation_interval is not None:
+        timeframe_confirmation = build_timeframe_confirmation(
+            lower_structure=structure,
+            higher_df=confirmation_df,
+            higher_interval=confirmation_interval,
+        )
     confidence = score_setup(
         df,
         structure,
@@ -49,6 +59,7 @@ def analyze_dataframe(
         levels["supports"],
         levels["resistances"],
         volume,
+        timeframe_confirmation=timeframe_confirmation,
     )
 
     return {
@@ -61,6 +72,7 @@ def analyze_dataframe(
         "signal": signal,
         "signal_label": signal_label(signal["signal"]),
         "volume": volume,
+        "timeframe_confirmation": timeframe_confirmation,
         "trade_plan": plan,
         "setup_label": setup_label(plan.setup),
         "confidence": confidence,
@@ -75,20 +87,40 @@ def analyze_symbol(
     risk_percent: float = 1.0,
     fee_per_trade: float = 0.0,
     slippage_points: float = 0.0,
+    confirmation_interval: str | None = None,
 ) -> dict:
     provider = YFinanceProvider()
     df = provider.get_intraday(symbol, interval, period=period, save_to_cache=True)
+    confirmation_df = None
+    if confirmation_interval:
+        confirmation_df = provider.get_history(
+            symbol=symbol,
+            interval=confirmation_interval,
+            period=_confirmation_period(confirmation_interval),
+            save_to_cache=True,
+        )
     result = analyze_dataframe(
         df,
         portfolio_size_sek=portfolio_size_sek,
         risk_percent=risk_percent,
         fee_per_trade=fee_per_trade,
         slippage_points=slippage_points,
+        confirmation_df=confirmation_df,
+        confirmation_interval=confirmation_interval,
     )
     result["symbol"] = symbol
     result["interval"] = interval
     result["period"] = period
+    result["confirmation_interval"] = confirmation_interval
     return result
+
+
+def _confirmation_period(interval: str) -> str:
+    if interval == "1d":
+        return "1y"
+    if interval in {"30m", "60m"}:
+        return "1mo"
+    return "5d"
 
 
 def research_dataframe(

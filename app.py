@@ -9,6 +9,7 @@ from analysis.levels import find_levels
 from analysis.market_hours import format_timestamp, market_status
 from analysis.market_structure import classify_structure
 from analysis.signals import classify_signal
+from analysis.timeframes import build_timeframe_confirmation
 from analysis.trade_engine import build_trade_plan
 from analysis.volume import analyze_volume
 from charts.plotly_chart import build_candlestick_chart
@@ -18,6 +19,7 @@ from ui.labels import setup_label, signal_label
 
 
 INTERVALS = ["1m", "2m", "5m", "15m"]
+CONFIRMATION_INTERVALS = ["None", "15m", "30m", "60m", "1d"]
 TIMEZONES = ["Europe/Stockholm", "UTC", "America/New_York"]
 EMA_OPTIONS = [9, 20, 50, 200]
 PRESETS = ["Custom", "^OMX", "AAPL", "MSFT", "NVDA", "SPY", "BTC-USD", "ETH-USD", "EURUSD=X"]
@@ -65,6 +67,15 @@ interval = st.sidebar.selectbox(
     "Interval",
     INTERVALS,
     index=INTERVALS.index(settings["interval"]) if settings["interval"] in INTERVALS else 0,
+)
+confirmation_interval = st.sidebar.selectbox(
+    "Confirmation timeframe",
+    CONFIRMATION_INTERVALS,
+    index=(
+        CONFIRMATION_INTERVALS.index(settings["confirmation_interval"])
+        if settings["confirmation_interval"] in CONFIRMATION_INTERVALS
+        else 0
+    ),
 )
 refresh_seconds = st.sidebar.slider("Refresh seconds", 5, 60, int(settings["refresh_seconds"]))
 portfolio_size_sek = st.sidebar.number_input(
@@ -142,6 +153,7 @@ if st.sidebar.button("Save current settings"):
             "clean_chart_mode": clean_chart_mode,
             "level_distance_percent": level_distance_percent,
             "enable_alerts": enable_alerts,
+            "confirmation_interval": confirmation_interval,
             "watchlist": settings["watchlist"],
         }
     )
@@ -169,6 +181,19 @@ try:
     structure = classify_structure(df, lookback=min(30, len(df)))
     signal = classify_signal(df, levels["supports"], levels["resistances"], structure)
     volume_read = analyze_volume(df)
+    timeframe_confirmation = None
+    if confirmation_interval != "None":
+        confirmation_df = provider.get_history(
+            symbol=symbol,
+            interval=confirmation_interval,
+            period="1y" if confirmation_interval == "1d" else "1mo",
+            save_to_cache=True,
+        )
+        timeframe_confirmation = build_timeframe_confirmation(
+            lower_structure=structure,
+            higher_df=confirmation_df,
+            higher_interval=confirmation_interval,
+        )
     trade_plan = build_trade_plan(
         df=df,
         structure=structure,
@@ -179,7 +204,16 @@ try:
         fee_per_trade=fee_per_trade,
         slippage_points=slippage_points,
     )
-    confidence = score_setup(df, structure, signal, trade_plan, levels["supports"], levels["resistances"], volume_read)
+    confidence = score_setup(
+        df,
+        structure,
+        signal,
+        trade_plan,
+        levels["supports"],
+        levels["resistances"],
+        volume_read,
+        timeframe_confirmation=timeframe_confirmation,
+    )
 
     latest_close = float(df.iloc[-1]["close"])
     latest_open = float(df.iloc[-1]["open"])
@@ -226,6 +260,10 @@ try:
         signal_card.metric("Confidence", f"{confidence['score']}/100", confidence["grade"])
 
         st.info(f"Structure: {structure}")
+        if timeframe_confirmation is not None:
+            status = timeframe_confirmation["status"].replace("_", " ").title()
+            st.write(f"**Timeframe confirmation:** {status}")
+            st.caption(timeframe_confirmation["reason"])
         st.write(f"**Signal:** {signal_label(signal['signal'])}")
         st.write(f"**Reason:** {signal['reason']}")
 

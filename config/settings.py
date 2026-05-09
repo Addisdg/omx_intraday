@@ -22,6 +22,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "clean_chart_mode": False,
     "level_distance_percent": 0.0,
     "enable_alerts": True,
+    "confirmation_interval": "None",
     "watchlist": "^OMX\nAAPL\nMSFT\nNVDA\nSPY\nBTC-USD\nEURUSD=X",
 }
 

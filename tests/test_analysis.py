@@ -20,6 +20,7 @@ from analysis.market_hours import format_timestamp, infer_market
 from analysis.market_structure import classify_structure
 from analysis.research import estimate_historical_edge, probability_from_edge, run_historical_research
 from analysis.signals import classify_signal
+from analysis.timeframes import compare_timeframes
 from analysis.trade_engine import TradePlan, build_trade_plan, calculate_position_size
 from analysis.volume import analyze_volume
 from config.settings import load_settings, save_settings
@@ -351,6 +352,43 @@ def test_confidence_score_explains_cap_when_no_actionable_setup() -> None:
     assert "No actionable setup is active; confidence is capped." in confidence["notes"]
 
 
+def test_timeframe_comparison_reports_aligned_and_conflicting_context() -> None:
+    aligned = compare_timeframes("uptrend", "breakout", higher_interval="60m")
+    conflicting = compare_timeframes("uptrend", "downtrend", higher_interval="60m")
+    mixed = compare_timeframes("uptrend", "range", higher_interval="60m")
+
+    assert aligned["status"] == "aligned"
+    assert aligned["score_adjustment"] > 0
+    assert conflicting["status"] == "conflicting"
+    assert conflicting["score_adjustment"] < 0
+    assert mixed["status"] == "mixed"
+    assert mixed["score_adjustment"] == 0
+
+
+def test_confidence_score_includes_timeframe_confirmation_factor() -> None:
+    df = _df([100, 101, 102, 103, 104, 106])
+    levels = {"supports": [101.0, 103.0], "resistances": [105.0]}
+    structure = "breakout"
+    signal = classify_signal(df, levels["supports"], levels["resistances"], structure)
+    plan = build_trade_plan(df, structure, levels["supports"], levels["resistances"])
+    volume = analyze_volume(df)
+    confirmation = compare_timeframes("breakout", "downtrend", higher_interval="60m")
+
+    confidence = score_setup(
+        df,
+        structure,
+        signal,
+        plan,
+        levels["supports"],
+        levels["resistances"],
+        volume,
+        timeframe_confirmation=confirmation,
+    )
+
+    assert confidence["components"]["timeframe_confirmation"] == -8
+    assert confidence["factors"]["timeframe_confirmation"]["reason"] == confirmation["reason"]
+
+
 def test_data_quality_passes_clean_candles() -> None:
     quality = assess_data_quality(_df([100, 101, 102, 103, 104]))
 
@@ -477,6 +515,17 @@ def test_service_analyze_dataframe_returns_current_read() -> None:
     assert "confidence" in result
     assert result["data_quality"]["status"] == "ok"
     assert "trade_plan" in result
+
+
+def test_service_analyze_dataframe_returns_timeframe_confirmation() -> None:
+    lower = _df([100, 101, 102, 103, 104, 106])
+    higher = _df(list(range(100, 130)))
+
+    result = analyze_dataframe(lower, confirmation_df=higher, confirmation_interval="60m")
+
+    assert result["status"] == "ok"
+    assert result["timeframe_confirmation"] is not None
+    assert "timeframe_confirmation" in result["confidence"]["components"]
 
 
 def test_service_research_dataframe_returns_research_bundle() -> None:

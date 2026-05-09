@@ -14,6 +14,7 @@ class AnalyzeRequest(BaseModel):
     symbol: str
     interval: str = "1m"
     period: str | None = None
+    confirmation_interval: str | None = None
     portfolio_size_sek: float = 30_000
     risk_percent: float = 1.0
     fee_per_trade: float = 0.0
@@ -41,6 +42,7 @@ def analyze(request: AnalyzeRequest) -> dict:
         risk_percent=request.risk_percent,
         fee_per_trade=request.fee_per_trade,
         slippage_points=request.slippage_points,
+        confirmation_interval=request.confirmation_interval,
     )
     return _json_safe(result)
 

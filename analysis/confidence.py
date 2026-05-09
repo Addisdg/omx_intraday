@@ -19,6 +19,7 @@ def score_setup(
     supports: list[float],
     resistances: list[float],
     volume_read: dict,
+    timeframe_confirmation: dict | None = None,
 ) -> dict:
     if df.empty:
         return {
@@ -43,6 +44,8 @@ def score_setup(
         "volume": _factor_volume(volume_read),
         "freshness": _factor_freshness(signal, trade_plan),
     }
+    if timeframe_confirmation is not None:
+        factors["timeframe_confirmation"] = _factor_timeframe_confirmation(timeframe_confirmation)
 
     components = {name: factor["score"] for name, factor in factors.items()}
     raw_score = sum(components.values())
@@ -128,6 +131,14 @@ def _factor_freshness(signal: dict, trade_plan: TradePlan) -> dict:
     if trade_plan.setup in {"BUY_PULLBACK", "SELL_RETEST"}:
         return _factor(10, 15, "Trade plan is based on a pullback/retest scenario")
     return _factor(4, 15, "No fresh actionable trigger is active")
+
+
+def _factor_timeframe_confirmation(timeframe_confirmation: dict) -> dict:
+    return _factor(
+        int(timeframe_confirmation.get("score_adjustment", 0)),
+        8,
+        timeframe_confirmation.get("reason", "Higher-timeframe confirmation is unavailable"),
+    )
 
 
 def _factor(score: int, max_score: int, reason: str) -> dict:

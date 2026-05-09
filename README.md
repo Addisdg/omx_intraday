@@ -70,12 +70,13 @@ http://localhost:8501
 5. Set `Risk per trade (%)` to control maximum risk used in position sizing.
 6. Add estimated fees and slippage if you want position sizing and R/R to be more conservative.
 7. Pick a display timezone for the last candle timestamp.
-8. Choose chart overlays such as extra EMAs, VWAP, and ATR bands.
-9. Use `Show levels within % of price` to hide distant support/resistance lines.
-10. Use `Clean chart mode` when the chart gets too busy.
-11. Use `Quick presets` to quickly switch to common symbols.
-12. Save your preferred settings with `Save current settings`.
-13. Enable `Show debug errors` only when troubleshooting.
+8. Pick an optional confirmation timeframe to compare the current setup with a broader trend.
+9. Choose chart overlays such as extra EMAs, VWAP, and ATR bands.
+10. Use `Show levels within % of price` to hide distant support/resistance lines.
+11. Use `Clean chart mode` when the chart gets too busy.
+12. Use `Quick presets` to quickly switch to common symbols.
+13. Save your preferred settings with `Save current settings`.
+14. Enable `Show debug errors` only when troubleshooting.
 
 The right panel gives a plain-language interpretation:
 
@@ -85,7 +86,7 @@ The right panel gives a plain-language interpretation:
 | `Supports` | Price zones where recent local lows clustered. |
 | `Resistances` | Price zones where recent local highs clustered. |
 | `Signal` | A higher-level read, such as bearish bias, bullish bias, breakout, breakdown, fake breakout, or wait. |
-| `Confidence` | A 0-100 score built from trend alignment, level location, R/R, volume, and freshness. |
+| `Confidence` | A 0-100 score built from trend alignment, level location, R/R, volume, freshness, and optional higher-timeframe confirmation. |
 | `Volume context` | Latest volume compared with recent average volume. |
 | `Trade Engine` | A possible plan if conditions meet the strategy rules. |
 | `R/R ratio` | Reward-to-risk ratio based on entry, stop, and target. |
@@ -278,6 +279,8 @@ When `tolerance=None`, the function uses an adaptive tolerance based on recent p
 - Signal/setup freshness.
 
 The score also returns explainable factor details with each factor's score, maximum score, and reason, while preserving the original numeric component map for API compatibility.
+
+When a confirmation timeframe is supplied, `score_setup()` adds an explainable adjustment for aligned, mixed, unknown, or conflicting higher-timeframe structure. This affects confidence only; it does not change the entry, stop, or target rules.
 
 ### `analysis/volume.py`
 
