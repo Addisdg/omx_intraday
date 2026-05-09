@@ -11,6 +11,7 @@ class YFinanceProvider:
         self,
         symbol: str,
         interval: str = "1m",
+        period: str | None = None,
         save_to_cache: bool = True,
     ) -> pd.DataFrame:
         period_map = {
@@ -25,7 +26,7 @@ class YFinanceProvider:
         df = yf.download(
             tickers=symbol,
             interval=interval,
-            period=period_map.get(interval, "5d"),
+            period=period or period_map.get(interval, "5d"),
             progress=False,
             auto_adjust=False,
             threads=False,
@@ -76,3 +77,17 @@ class YFinanceProvider:
         if save_to_cache:
             save_cached_data(df, symbol, interval)
         return df
+
+    def get_history(
+        self,
+        symbol: str,
+        interval: str = "1d",
+        period: str = "1y",
+        save_to_cache: bool = True,
+    ) -> pd.DataFrame:
+        return self.get_intraday(
+            symbol=symbol,
+            interval=interval,
+            period=period,
+            save_to_cache=save_to_cache,
+        )

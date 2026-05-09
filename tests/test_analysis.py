@@ -14,11 +14,13 @@ from analysis.indicators import add_indicators
 from analysis.levels import find_levels
 from analysis.market_hours import format_timestamp, infer_market
 from analysis.market_structure import classify_structure
+from analysis.research import estimate_historical_edge, probability_from_edge, run_historical_research
 from analysis.signals import classify_signal
 from analysis.trade_engine import build_trade_plan, calculate_position_size
 from analysis.volume import analyze_volume
 from config.settings import load_settings, save_settings
 from data.cache import load_cached_data, save_cached_data
+from services.market_analysis import analyze_dataframe, research_dataframe
 from ui.labels import setup_label
 
 
@@ -278,3 +280,49 @@ def test_backtest_extra_summaries_and_optimization() -> None:
     assert len(curve) == len(trades)
     assert "setup" in by_setup.columns
     assert len(scan) == 2
+
+
+def test_research_edge_and_probability() -> None:
+    trades = pd.DataFrame(
+        [
+            {"setup": "BUY_BREAKOUT", "outcome": "target", "r_multiple": 2.0},
+            {"setup": "BUY_BREAKOUT", "outcome": "stop", "r_multiple": -1.0},
+            {"setup": "BUY_BREAKOUT", "outcome": "target", "r_multiple": 2.0},
+            {"setup": "BUY_BREAKOUT", "outcome": "timeout", "r_multiple": 0.5},
+            {"setup": "BUY_BREAKOUT", "outcome": "target", "r_multiple": 2.0},
+        ]
+    )
+
+    edge = estimate_historical_edge(trades, "BUY_BREAKOUT")
+    probability = probability_from_edge(edge, fallback_confidence=50)
+
+    assert edge.sample_size == 5
+    assert edge.win_rate == 0.8
+    assert probability > 50
+
+
+def test_service_analyze_dataframe_returns_current_read() -> None:
+    result = analyze_dataframe(_df([100, 101, 102, 103, 104, 106]))
+
+    assert result["status"] == "ok"
+    assert "confidence" in result
+    assert "trade_plan" in result
+
+
+def test_service_research_dataframe_returns_research_bundle() -> None:
+    df = _df(list(range(100, 145)))
+
+    result = research_dataframe(df, warmup=20, max_hold_bars=5)
+
+    assert result["status"] == "ok"
+    assert "current" in result
+    assert "research" in result
+
+
+def test_run_historical_research_returns_decision() -> None:
+    df = _df(list(range(100, 145)))
+
+    result = run_historical_research(df, current_setup="BUY_BREAKOUT", confidence_score=60, warmup=20)
+
+    assert "probability" in result
+    assert "decision" in result

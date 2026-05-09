@@ -14,7 +14,9 @@ The dashboard has three main areas:
 | Candlestick chart | Displays intraday price candles, selected EMAs, optional VWAP, optional ATR bands, detected supports, and detected resistances. |
 | Market Read + Trade Engine | Shows compact cards for price, signal, confidence, volume context, setup scenario, entry, stop, target, R/R, and position size. |
 | Backtest page | Replays the rules candle by candle and reports win rate, total R, drawdown, equity curve, setup stats, and trade history. |
+| Historical Research page | Compares the current setup to similar historical setups and shows probability-style output. |
 | Watchlist page | Scans multiple symbols and highlights active setups, confidence, volume state, and safer scenario labels. |
+| Stock Screener page | Ranks many symbols by current confidence plus historical replay edge. |
 
 Example symbols:
 
@@ -104,6 +106,7 @@ The code is intentionally split into small modules so the dashboard stays readab
 ```text
 .
 ├── app.py
+├── api.py
 ├── analysis/
 │   ├── backtest.py
 │   ├── confidence.py
@@ -111,6 +114,7 @@ The code is intentionally split into small modules so the dashboard stays readab
 │   ├── levels.py
 │   ├── market_hours.py
 │   ├── market_structure.py
+│   ├── research.py
 │   ├── signals.py
 │   ├── structure.py
 │   ├── trade_engine.py
@@ -125,7 +129,11 @@ The code is intentionally split into small modules so the dashboard stays readab
 │   └── models.py
 ├── pages/
 │   ├── 1_Backtest.py
-│   └── 2_Watchlist.py
+│   ├── 2_Watchlist.py
+│   ├── 3_Historical_Research.py
+│   └── 4_Stock_Screener.py
+├── services/
+│   └── market_analysis.py
 ├── ui/
 │   └── labels.py
 ├── tests/
@@ -182,6 +190,51 @@ The Backtest page replays the current rule set candle by candle. It can use fres
 ### `pages/2_Watchlist.py`
 
 The Watchlist page scans several symbols with the same market-read and trade-engine pipeline. It separates active setups from the full scan table so potential opportunities are easier to spot. It also shows confidence, volume state, relative volume, and safer setup wording.
+
+### `pages/3_Historical_Research.py`
+
+The Historical Research page compares the latest setup with historical replay results. It shows:
+
+- Current confidence score.
+- Historical probability based on similar past setups.
+- Similar setup sample size.
+- Historical win rate and average R.
+- A plain-language research decision.
+- Equity curve and setup-level results.
+
+### `pages/4_Stock_Screener.py`
+
+The Stock Screener page ranks many symbols by combining:
+
+- Current confidence score.
+- Historical probability.
+- Total R from replay.
+- Drawdown penalty.
+- Current setup label.
+
+### `services/market_analysis.py`
+
+The service layer exposes reusable functions for non-Streamlit callers:
+
+- `analyze_dataframe()`
+- `analyze_symbol()`
+- `research_dataframe()`
+
+This is the bridge toward an API, PWA, or native mobile frontend.
+
+### `api.py`
+
+`api.py` exposes the analysis through FastAPI:
+
+- `GET /health`
+- `POST /analyze`
+- `POST /research`
+
+Run it with:
+
+```bash
+uvicorn api:app --reload
+```
 
 ### `data/provider_yfinance.py`
 
@@ -298,6 +351,15 @@ Fee and slippage settings can reduce the displayed reward and adjust entry/targe
 
 It also includes helpers for equity curves, per-setup summaries, date filtering, overlapping-trade prevention, and a small parameter scan.
 
+### `analysis/research.py`
+
+Research helpers estimate historical edge for the current setup. They convert replay results into probability-style outputs such as:
+
+- Historical probability.
+- Similar setup sample size.
+- Average R for similar setups.
+- Decision labels such as `Watchlist candidate`, `Avoid or wait`, or `Research only`.
+
 ### `config/settings.py`
 
 Settings are saved to `config/user_settings.json`, which is ignored by Git. This lets the app remember local preferences without committing personal defaults.
@@ -388,6 +450,53 @@ The page can:
 
 Cached CSV files are ignored by Git because they are runtime artifacts.
 
+## Historical Research
+
+Open `Historical Research` in the Streamlit sidebar.
+
+This page is meant for the question: “Has this type of setup worked before?”
+
+It does not predict the future directly. Instead, it compares the current setup with similar historical setups from the replay engine and reports a probability-style estimate. This is safer than a raw buy/sell label because it makes sample size and historical edge visible.
+
+## Stock Screening
+
+Open `Stock Screener` in the Streamlit sidebar.
+
+Enter one symbol per line. The screener downloads history for each symbol, runs the current read plus historical research, and ranks the results. This is useful for finding candidates worth deeper review.
+
+## API And Mobile Path
+
+The app now has a FastAPI-compatible service boundary.
+
+Start the API:
+
+```bash
+uvicorn api:app --reload
+```
+
+Example request:
+
+```bash
+curl -X POST http://localhost:8000/analyze \
+  -H "Content-Type: application/json" \
+  -d '{"symbol":"AAPL","interval":"15m","period":"1mo"}'
+```
+
+Recommended Android path:
+
+1. Keep the analysis engine in Python.
+2. Host `api.py` on a server or home machine.
+3. Build a mobile-friendly PWA or Android app that calls `/analyze` and `/research`.
+4. Add authentication before exposing the API publicly.
+
+Fastest installable Android experience:
+
+1. Host the Streamlit app or a future PWA.
+2. Open it in Chrome on Android.
+3. Use `Add to Home screen`.
+
+Native Android is possible later, but the current service layer makes a PWA or API-backed mobile frontend the lower-risk next step.
+
 ## Watchlist Scanning
 
 Open the Streamlit sidebar navigation and choose `Watchlist`.
@@ -426,8 +535,11 @@ A trade plan should be read as a scenario, not an instruction. The app does not 
 ## Implemented Improvements
 
 - Backtesting and replay page.
+- Historical research page with probability-style output.
 - Local data caching in `data/cache/`.
 - Watchlist scanner.
+- Stock screener with historical edge ranking.
+- FastAPI service boundary for future mobile/PWA clients.
 - Market-hours awareness for OMX, US, FX, and crypto.
 - Timezone-formatted timestamps.
 - Setup alerts in the live dashboard.
@@ -443,7 +555,7 @@ A trade plan should be read as a scenario, not an instruction. The app does not 
 
 ## Potential Next Improvement
 
-The strongest next improvement is a multi-symbol optimization report. The app could run the parameter scan across the full watchlist and compare robustness by symbol, interval, and setup type instead of optimizing one chart at a time.
+The strongest next improvement is a richer data layer. `yfinance` is good for prototyping, but a serious research tool would benefit from a dedicated market-data provider with deeper intraday history, adjusted corporate actions, cleaner volume, fundamentals, and survivorship-bias-aware universes.
 
 ## Terminal Helper Appendix
 
