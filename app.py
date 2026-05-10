@@ -8,7 +8,7 @@ from analysis.data_quality import assess_data_quality
 from analysis.indicators import summarize_indicator_context
 from analysis.levels import find_levels
 from analysis.market_hours import format_timestamp, market_status
-from analysis.market_structure import classify_structure
+from analysis.market_structure import analyze_market_regime
 from analysis.signals import classify_signal
 from analysis.timeframes import build_timeframe_confirmation
 from analysis.trade_engine import build_trade_plan
@@ -184,7 +184,8 @@ try:
         st.stop()
 
     levels = find_levels(df, window=3, tolerance=None, min_touches=2)
-    structure = classify_structure(df, lookback=min(30, len(df)))
+    market_regime = analyze_market_regime(df, lookback=min(30, len(df)))
+    structure = market_regime["structure"]
     signal = classify_signal(df, levels["supports"], levels["resistances"], structure)
     volume_read = analyze_volume(df)
     volatility_read = analyze_volatility_regime(df)
@@ -270,12 +271,22 @@ try:
         signal_card.metric("Confidence", f"{confidence['score']}/100", confidence["grade"])
 
         st.info(f"Structure: {structure}")
+        st.caption(market_regime["reason"])
         if timeframe_confirmation is not None:
             status = timeframe_confirmation["status"].replace("_", " ").title()
             st.write(f"**Timeframe confirmation:** {status}")
             st.caption(timeframe_confirmation["reason"])
         st.write(f"**Signal:** {signal_label(signal['signal'])}")
         st.write(f"**Reason:** {signal['reason']}")
+
+        with st.expander("Regime context", expanded=False):
+            st.write(f"**Bias:** {market_regime['bias']}")
+            st.write(f"**Trend:** {market_regime['trend_state']}")
+            st.write(f"**Range:** {market_regime['range_state']}")
+            st.write(f"**Breakout:** {market_regime['breakout_state']}")
+            st.write(f"**Range %:** {_fmt(market_regime['range_percent'])}")
+            st.write(f"**EMA distance %:** {_fmt(market_regime['ema_distance_percent'])}")
+            st.write(f"**EMA slope %:** {_fmt(market_regime['ema_slope_percent'])}")
 
         with st.expander("Price levels", expanded=False):
             st.write(f"**Session high:** {session_high:.2f}")

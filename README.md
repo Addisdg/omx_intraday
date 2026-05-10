@@ -84,6 +84,7 @@ The right panel gives a plain-language interpretation:
 | Field | Meaning |
 | --- | --- |
 | `Structure` | Current market regime, such as `breakout`, `breakdown`, `uptrend`, `downtrend`, or `range`. |
+| `Regime context` | Explainable bias, trend, range, breakout state, EMA distance, and EMA slope behind the structure label. |
 | `Supports` | Price zones where recent local lows clustered. |
 | `Resistances` | Price zones where recent local highs clustered. |
 | `Signal` | A higher-level read, such as bearish bias, bullish bias, breakout, breakdown, fake breakout, or wait. |
@@ -304,7 +305,16 @@ Market-hours helpers infer whether a symbol is OMX, US, FX, or crypto and format
 
 ### `analysis/market_structure.py`
 
-`classify_structure()` provides a regime label. It looks at recent candles, EMA20, highs, lows, slope, and range size to classify states such as:
+`analyze_market_regime()` provides an explainable market-regime read with:
+
+- The structure label used by the signal and trade-engine pipeline.
+- Directional bias.
+- Trend state.
+- Range/compression state.
+- Breakout state.
+- Close location, range %, EMA distance %, and EMA slope %.
+
+`classify_structure()` remains the compatibility wrapper that returns only the structure label. It looks at recent candles, EMA20, highs, lows, slope, and range size to classify states such as:
 
 - `breakout`
 - `breakdown`
@@ -317,7 +327,7 @@ Market-hours helpers infer whether a symbol is OMX, US, FX, or crypto and format
 - `bullish_bias`
 - `bearish_bias`
 
-This label is later used by both the signal classifier and trade engine.
+This label is later used by both the signal classifier and trade engine. The richer regime context is shown for decision support and API transparency; it does not change entries, stops, targets, or position sizing by itself.
 
 ### `analysis/signals.py`
 
@@ -575,6 +585,7 @@ A trade plan should be read as a scenario, not an instruction. The app does not 
 - Volume analysis.
 - ATR-based volatility regime context.
 - RSI, MACD, Bollinger, and EMA20-slope indicator context.
+- Explainable market-regime context behind the structure label.
 - Saved user settings and watchlist.
 - Backtest equity curve, per-setup stats, date filtering, overlap prevention, and parameter scan.
 

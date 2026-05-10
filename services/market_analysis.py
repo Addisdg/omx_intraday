@@ -6,7 +6,7 @@ from analysis.confidence import score_setup
 from analysis.data_quality import assess_data_quality
 from analysis.indicators import summarize_indicator_context
 from analysis.levels import find_levels
-from analysis.market_structure import classify_structure
+from analysis.market_structure import analyze_market_regime
 from analysis.research import build_similarity_context, run_historical_research
 from analysis.signals import classify_signal
 from analysis.timeframes import build_timeframe_confirmation
@@ -33,7 +33,8 @@ def analyze_dataframe(
         return {"status": "invalid_data", "data_quality": data_quality}
 
     levels = find_levels(df, window=3, tolerance=None, min_touches=2)
-    structure = classify_structure(df, lookback=min(30, len(df)))
+    market_regime = analyze_market_regime(df, lookback=min(30, len(df)))
+    structure = market_regime["structure"]
     signal = classify_signal(df, levels["supports"], levels["resistances"], structure)
     volume = analyze_volume(df)
     volatility = analyze_volatility_regime(df)
@@ -75,6 +76,7 @@ def analyze_dataframe(
         "last_timestamp": str(df.iloc[-1]["timestamp"]),
         "levels": levels,
         "structure": structure,
+        "market_regime": market_regime,
         "signal": signal,
         "signal_label": signal_label(signal["signal"]),
         "volume": volume,

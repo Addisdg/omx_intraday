@@ -18,7 +18,7 @@ from analysis.data_quality import assess_data_quality
 from analysis.indicators import add_indicators, summarize_indicator_context
 from analysis.levels import find_levels
 from analysis.market_hours import format_timestamp, infer_market
-from analysis.market_structure import classify_structure
+from analysis.market_structure import analyze_market_regime, classify_structure
 from analysis.research import build_similarity_context, estimate_historical_edge, probability_from_edge, run_historical_research
 from analysis.screener import calculate_rank_components, candidate_filter_result
 from analysis.signals import classify_signal
@@ -169,6 +169,44 @@ def test_structure_detects_uptrend() -> None:
     df = _df(list(range(100, 125)))
 
     assert classify_structure(df, lookback=25) in {"breakout", "extended_uptrend", "uptrend"}
+
+
+def test_market_regime_context_explains_breakout_state() -> None:
+    df = _df(list(range(100, 130)))
+
+    regime = analyze_market_regime(df, lookback=25)
+
+    assert regime["status"] == "ok"
+    assert regime["structure"] == classify_structure(df, lookback=25)
+    assert regime["bias"] == "BULLISH"
+    assert regime["breakout_state"] == "upside_breakout"
+    assert regime["trend_state"] in {"rising", "bullish_bias"}
+    assert regime["ema_distance_percent"] is not None
+    assert "Structure is" in regime["reason"]
+
+
+def test_market_regime_context_identifies_compressed_range() -> None:
+    rows = []
+    closes = [100.00, 100.02, 100.04, 100.03, 100.05, 100.06, 100.07, 100.08, 100.09, 100.10] * 3
+    for idx, close in enumerate(closes):
+        rows.append(
+            {
+                "timestamp": pd.Timestamp("2026-04-24 09:00") + pd.Timedelta(minutes=idx),
+                "open": close,
+                "high": close + 0.03,
+                "low": close - 0.03,
+                "close": close,
+                "volume": 1_000,
+            }
+        )
+    df = pd.DataFrame(rows)
+
+    regime = analyze_market_regime(df, lookback=30)
+
+    assert regime["structure"] in {"range", "range_near_highs"}
+    assert regime["range_state"] in {"compressed", "compressed_near_highs", "compressed_near_lows"}
+    assert regime["range_percent"] is not None
+    assert regime["range_percent"] < 0.6
 
 
 def test_indicators_add_ema_vwap_and_atr_bands() -> None:
@@ -769,6 +807,8 @@ def test_service_analyze_dataframe_returns_current_read() -> None:
     assert result["data_quality"]["status"] == "ok"
     assert "trade_plan" in result
     assert "volatility" in result
+    assert result["market_regime"]["structure"] == result["structure"]
+    assert result["market_regime"]["reason"]
     assert result["indicators"]["status"] == "ok"
     assert result["indicators"]["rsi_state"] == "overbought"
 
