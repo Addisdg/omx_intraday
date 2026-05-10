@@ -42,6 +42,8 @@ from analysis.volatility import analyze_volatility_regime
 from analysis.volume import analyze_volume
 from config.settings import load_settings, save_settings
 from data.cache import load_cached_data, save_cached_data
+from data.provider_base import ProviderRateLimitError, ProviderSchemaError, ProviderTimeoutError
+from data.provider_yfinance import YFinanceProvider
 from services.market_analysis import analyze_dataframe, research_dataframe
 from ui.labels import setup_label
 
@@ -1036,12 +1038,17 @@ def test_screener_failure_row_explains_symbol_failures() -> None:
 
 
 def test_screener_exception_classifier_maps_common_provider_failures() -> None:
+    typed_timeout = classify_screener_exception(ProviderTimeoutError("internal timeout detail"))
+    typed_rate_limit = classify_screener_exception(ProviderRateLimitError("429"))
     timeout = classify_screener_exception(TimeoutError("request timed out"))
     connection = classify_screener_exception(ConnectionError("DNS lookup failed"))
     schema = classify_screener_exception(ValueError("Missing expected columns: ['close']"))
     no_data = classify_screener_exception(RuntimeError("possibly delisted; no data found"))
     unexpected = classify_screener_exception(RuntimeError("strange internal problem"))
 
+    assert typed_timeout["status"] == "provider_timeout"
+    assert typed_timeout["reason"] == "Market-data provider timed out for this symbol."
+    assert typed_rate_limit["status"] == "provider_rate_limited"
     assert timeout["status"] == "provider_timeout"
     assert "timed out" in timeout["reason"]
     assert connection["status"] == "provider_connection_error"
@@ -1055,6 +1062,38 @@ def test_research_status_reason_maps_known_statuses() -> None:
     assert research_status_reason("no_data") == "No candles were available for research."
     assert research_status_reason("invalid_data") == "Research data failed quality checks."
     assert research_status_reason("custom") == "Research returned status custom."
+
+
+def test_yfinance_provider_raises_schema_error_for_unexpected_columns(monkeypatch) -> None:
+    def fake_download(**kwargs) -> pd.DataFrame:
+        return pd.DataFrame(
+            {
+                "Datetime": [pd.Timestamp("2026-04-24 09:00")],
+                "Open": [100.0],
+                "High": [101.0],
+                "Low": [99.0],
+                "Volume": [1_000],
+            }
+        )
+
+    import data.provider_yfinance as provider_module
+
+    monkeypatch.setattr(provider_module.yf, "download", fake_download)
+
+    with pytest.raises(ProviderSchemaError):
+        YFinanceProvider().get_history("BAD", interval="1d", period="1mo", save_to_cache=False)
+
+
+def test_yfinance_provider_wraps_provider_timeouts(monkeypatch) -> None:
+    def fake_download(**kwargs) -> pd.DataFrame:
+        raise TimeoutError("request timed out")
+
+    import data.provider_yfinance as provider_module
+
+    monkeypatch.setattr(provider_module.yf, "download", fake_download)
+
+    with pytest.raises(ProviderTimeoutError):
+        YFinanceProvider().get_history("BAD", interval="1d", period="1mo", save_to_cache=False)
 
 
 def test_service_analyze_dataframe_returns_current_read() -> None:

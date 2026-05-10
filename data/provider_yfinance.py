@@ -4,9 +4,16 @@ import pandas as pd
 import yfinance as yf
 
 from data.cache import save_cached_data
+from data.provider_base import (
+    MarketDataProvider,
+    ProviderConnectionError,
+    ProviderRateLimitError,
+    ProviderSchemaError,
+    ProviderTimeoutError,
+)
 
 
-class YFinanceProvider:
+class YFinanceProvider(MarketDataProvider):
     def get_intraday(
         self,
         symbol: str,
@@ -23,14 +30,17 @@ class YFinanceProvider:
             "60m": "1mo",
         }
 
-        df = yf.download(
-            tickers=symbol,
-            interval=interval,
-            period=period or period_map.get(interval, "5d"),
-            progress=False,
-            auto_adjust=False,
-            threads=False,
-        )
+        try:
+            df = yf.download(
+                tickers=symbol,
+                interval=interval,
+                period=period or period_map.get(interval, "5d"),
+                progress=False,
+                auto_adjust=False,
+                threads=False,
+            )
+        except Exception as exc:
+            raise _provider_error_from_exception(exc) from exc
 
         if df is None or df.empty:
             return pd.DataFrame(
@@ -61,7 +71,7 @@ class YFinanceProvider:
         needed = ["timestamp", "open", "high", "low", "close", "volume"]
         missing = [c for c in needed if c not in df.columns]
         if missing:
-            raise ValueError(
+            raise ProviderSchemaError(
                 f"Missing expected columns: {missing}. Got: {list(df.columns)}"
             )
 
@@ -91,3 +101,14 @@ class YFinanceProvider:
             period=period,
             save_to_cache=save_to_cache,
         )
+
+
+def _provider_error_from_exception(exc: Exception) -> Exception:
+    message = str(exc).lower()
+    if isinstance(exc, TimeoutError) or "timeout" in message or "timed out" in message:
+        return ProviderTimeoutError(str(exc))
+    if any(term in message for term in ["rate limit", "too many requests", "429"]):
+        return ProviderRateLimitError(str(exc))
+    if isinstance(exc, ConnectionError) or any(term in message for term in ["connection", "network", "dns", "name resolution"]):
+        return ProviderConnectionError(str(exc))
+    return exc

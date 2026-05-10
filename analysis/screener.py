@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from data.provider_base import MarketDataError
+
 
 SCREENER_TABLE_COLUMNS = {
     "ranking": [
@@ -107,6 +109,9 @@ def screener_failure_row(symbol: str, status: str, reason: str) -> dict:
 
 
 def classify_screener_exception(exc: Exception) -> dict:
+    if isinstance(exc, MarketDataError):
+        return {"status": exc.status, "reason": exc.user_message}
+
     message = str(exc).strip()
     lowered = message.lower()
 
