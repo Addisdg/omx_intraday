@@ -11,6 +11,7 @@ from data.provider_base import (
     ProviderSchemaError,
     ProviderTimeoutError,
     ProviderUnexpectedError,
+    attach_provider_metadata,
 )
 
 
@@ -31,11 +32,13 @@ class YFinanceProvider(MarketDataProvider):
             "60m": "1mo",
         }
 
+        effective_period = period or period_map.get(interval, "5d")
+
         try:
             df = yf.download(
                 tickers=symbol,
                 interval=interval,
-                period=period or period_map.get(interval, "5d"),
+                period=effective_period,
                 progress=False,
                 auto_adjust=False,
                 threads=False,
@@ -44,9 +47,10 @@ class YFinanceProvider(MarketDataProvider):
             raise _provider_error_from_exception(exc) from exc
 
         if df is None or df.empty:
-            return pd.DataFrame(
+            empty = pd.DataFrame(
                 columns=["timestamp", "open", "high", "low", "close", "volume"]
             )
+            return attach_provider_metadata(empty, _metadata(symbol, interval, effective_period))
 
         # Flatten MultiIndex columns if present
         if isinstance(df.columns, pd.MultiIndex):
@@ -87,7 +91,7 @@ class YFinanceProvider(MarketDataProvider):
         ).reset_index(drop=True)
         if save_to_cache:
             save_cached_data(df, symbol, interval)
-        return df
+        return attach_provider_metadata(df, _metadata(symbol, interval, effective_period))
 
     def get_history(
         self,
@@ -113,3 +117,16 @@ def _provider_error_from_exception(exc: Exception) -> Exception:
     if isinstance(exc, ConnectionError) or any(term in message for term in ["connection", "network", "dns", "name resolution"]):
         return ProviderConnectionError(str(exc))
     return ProviderUnexpectedError(str(exc))
+
+
+def _metadata(symbol: str, interval: str, period: str) -> dict:
+    return {
+        "provider": "yfinance",
+        "source": "download",
+        "symbol": symbol,
+        "interval": interval,
+        "period": period,
+        "retrieved_at": pd.Timestamp.now(tz="UTC").isoformat(),
+        "adjusted": False,
+        "warnings": ["yfinance data may be delayed, incomplete, or adjusted differently than broker data"],
+    }

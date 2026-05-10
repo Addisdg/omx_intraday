@@ -253,6 +253,8 @@ This keeps the rest of the app independent from the exact column names returned 
 
 Provider failures use typed exceptions from `data/provider_base.py` for common timeout, connection, rate-limit, schema, and unexpected provider problems. This lets UI surfaces such as the screener show stable failure categories instead of relying only on raw third-party exception text.
 
+Provider outputs also carry in-memory metadata through `DataFrame.attrs`, including provider name, source, symbol, interval, period, retrieval time, row count, adjustment flag, and warnings. `analyze_dataframe()` returns this as `provider_metadata`, and cached CSV loads are marked as `local_cache` because detailed download metadata is not persisted in CSV files.
+
 ### `analysis/levels.py`
 
 `find_levels()` detects support and resistance by:

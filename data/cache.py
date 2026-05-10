@@ -4,6 +4,8 @@ from pathlib import Path
 
 import pandas as pd
 
+from data.provider_base import attach_provider_metadata
+
 
 CACHE_DIR = Path("data/cache")
 
@@ -25,7 +27,20 @@ def load_cached_data(
     df = pd.read_csv(path)
     if "timestamp" in df.columns:
         df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
-    return df.dropna(subset=["timestamp"]).reset_index(drop=True)
+    df = df.dropna(subset=["timestamp"]).reset_index(drop=True)
+    return attach_provider_metadata(
+        df,
+        {
+            "provider": "local_cache",
+            "source": "cache",
+            "symbol": symbol,
+            "interval": interval,
+            "period": None,
+            "retrieved_at": None,
+            "adjusted": None,
+            "warnings": ["Loaded from local CSV cache; provider retrieval metadata is not persisted"],
+        },
+    )
 
 
 def save_cached_data(

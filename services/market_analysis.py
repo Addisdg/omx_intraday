@@ -13,6 +13,7 @@ from analysis.timeframes import build_timeframe_confirmation
 from analysis.trade_engine import build_trade_plan
 from analysis.volatility import analyze_volatility_regime
 from analysis.volume import analyze_volume
+from data.provider_base import provider_metadata_from_df
 from data.provider_yfinance import YFinanceProvider
 from ui.labels import setup_label, signal_label
 
@@ -26,11 +27,12 @@ def analyze_dataframe(
     confirmation_df: pd.DataFrame | None = None,
     confirmation_interval: str | None = None,
 ) -> dict:
+    provider_metadata = provider_metadata_from_df(df)
     data_quality = assess_data_quality(df)
     if df is None or df.empty:
-        return {"status": "no_data", "data_quality": data_quality}
+        return {"status": "no_data", "data_quality": data_quality, "provider_metadata": provider_metadata}
     if data_quality["status"] == "invalid":
-        return {"status": "invalid_data", "data_quality": data_quality}
+        return {"status": "invalid_data", "data_quality": data_quality, "provider_metadata": provider_metadata}
 
     levels = find_levels(df, window=3, tolerance=None, min_touches=2)
     market_regime = analyze_market_regime(df, lookback=min(30, len(df)))
@@ -72,6 +74,7 @@ def analyze_dataframe(
     return {
         "status": "ok",
         "data_quality": data_quality,
+        "provider_metadata": provider_metadata,
         "last_close": float(df.iloc[-1]["close"]),
         "last_timestamp": str(df.iloc[-1]["timestamp"]),
         "levels": levels,

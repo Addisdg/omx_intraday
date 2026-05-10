@@ -16,6 +16,7 @@ from analysis.volatility import analyze_volatility_regime
 from analysis.volume import analyze_volume
 from charts.plotly_chart import build_candlestick_chart
 from config.settings import load_settings, save_settings
+from data.provider_base import provider_metadata_from_df
 from data.provider_yfinance import YFinanceProvider
 from ui.labels import setup_label, signal_label
 
@@ -171,6 +172,7 @@ provider = YFinanceProvider()
 
 try:
     df = provider.get_intraday(symbol=symbol, interval=interval)
+    provider_metadata = provider_metadata_from_df(df)
 
     if df.empty:
         st.warning("No data returned. Try AAPL, MSFT, NVDA, SPY, BTC-USD, ETH-USD, EURUSD=X.")
@@ -254,7 +256,10 @@ try:
         st.subheader("Market Read")
         st.caption(f"Last candle: {latest_timestamp}")
         st.caption(market_status(symbol))
-        st.caption("Data source: yfinance intraday data, which may be delayed.")
+        st.caption(
+            f"Data source: {provider_metadata['provider']} "
+            f"({provider_metadata['source']}, {provider_metadata['interval'] or interval})"
+        )
         if data_quality["status"] == "ok":
             st.caption(f"Data quality: {data_quality['summary']} ({data_quality['row_count']} candles)")
         else:
@@ -265,6 +270,18 @@ try:
                 st.write(f"**Last candle:** {data_quality['last_timestamp']}")
                 for issue in data_quality["issues"]:
                     st.write(f"- {issue}")
+
+        with st.expander("Provider details", expanded=False):
+            st.write(f"**Provider:** {provider_metadata['provider']}")
+            st.write(f"**Source:** {provider_metadata['source']}")
+            st.write(f"**Symbol:** {provider_metadata['symbol']}")
+            st.write(f"**Interval:** {provider_metadata['interval']}")
+            st.write(f"**Period:** {provider_metadata['period']}")
+            st.write(f"**Rows:** {provider_metadata['row_count']}")
+            st.write(f"**Retrieved at:** {provider_metadata['retrieved_at']}")
+            st.write(f"**Adjusted:** {provider_metadata['adjusted']}")
+            for warning in provider_metadata["warnings"]:
+                st.caption(warning)
 
         price_card, signal_card = st.columns(2)
         price_card.metric("Last", f"{latest_close:.2f}", f"Open {latest_open:.2f}")

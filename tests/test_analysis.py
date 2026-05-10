@@ -42,7 +42,14 @@ from analysis.volatility import analyze_volatility_regime
 from analysis.volume import analyze_volume
 from config.settings import load_settings, save_settings
 from data.cache import load_cached_data, save_cached_data
-from data.provider_base import ProviderRateLimitError, ProviderSchemaError, ProviderTimeoutError, ProviderUnexpectedError
+from data.provider_base import (
+    ProviderRateLimitError,
+    ProviderSchemaError,
+    ProviderTimeoutError,
+    ProviderUnexpectedError,
+    attach_provider_metadata,
+    provider_metadata_from_df,
+)
 from data.provider_yfinance import YFinanceProvider
 from services.market_analysis import analyze_dataframe, research_dataframe
 from ui.labels import setup_label
@@ -289,6 +296,10 @@ def test_cache_round_trip(tmp_path) -> None:
 
     assert len(loaded) == len(df)
     assert list(loaded.columns) == list(df.columns)
+    metadata = provider_metadata_from_df(loaded)
+    assert metadata["provider"] == "local_cache"
+    assert metadata["source"] == "cache"
+    assert metadata["symbol"] == "^OMX"
 
 
 def test_market_helpers_infer_and_format_timezone() -> None:
@@ -1113,12 +1124,57 @@ def test_yfinance_provider_wraps_unexpected_provider_errors(monkeypatch) -> None
     assert isinstance(exc_info.value.__cause__, RuntimeError)
 
 
+def test_yfinance_provider_attaches_download_metadata(monkeypatch) -> None:
+    def fake_download(**kwargs) -> pd.DataFrame:
+        return pd.DataFrame(
+            {
+                "Datetime": [pd.Timestamp("2026-04-24 09:00")],
+                "Open": [100.0],
+                "High": [101.0],
+                "Low": [99.0],
+                "Close": [100.5],
+                "Volume": [1_000],
+            }
+        )
+
+    import data.provider_yfinance as provider_module
+
+    monkeypatch.setattr(provider_module.yf, "download", fake_download)
+
+    df = YFinanceProvider().get_history("AAPL", interval="1d", period="1mo", save_to_cache=False)
+    metadata = provider_metadata_from_df(df)
+
+    assert metadata["provider"] == "yfinance"
+    assert metadata["source"] == "download"
+    assert metadata["symbol"] == "AAPL"
+    assert metadata["interval"] == "1d"
+    assert metadata["period"] == "1mo"
+    assert metadata["row_count"] == 1
+    assert metadata["retrieved_at"] is not None
+
+
 def test_service_analyze_dataframe_returns_current_read() -> None:
-    result = analyze_dataframe(_df(list(range(100, 140))))
+    df = attach_provider_metadata(
+        _df(list(range(100, 140))),
+        {
+            "provider": "test_provider",
+            "source": "unit_test",
+            "symbol": "TEST",
+            "interval": "1m",
+            "period": "1d",
+            "retrieved_at": "2026-04-24T09:00:00+00:00",
+            "adjusted": False,
+            "warnings": [],
+        },
+    )
+
+    result = analyze_dataframe(df)
 
     assert result["status"] == "ok"
     assert "confidence" in result
     assert result["data_quality"]["status"] == "ok"
+    assert result["provider_metadata"]["provider"] == "test_provider"
+    assert result["provider_metadata"]["row_count"] == 40
     assert "trade_plan" in result
     assert "volatility" in result
     assert result["market_regime"]["structure"] == result["structure"]
