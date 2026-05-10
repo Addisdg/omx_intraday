@@ -43,6 +43,7 @@ def screen_symbol(symbol: str) -> dict:
     research = result["research"]
     summary = research["summary"]
     edge = research["edge"]
+    quality = research["quality"]
     confidence = current["confidence"]["score"]
     probability = research["probability"]
     total_r = summary.total_r
@@ -52,7 +53,7 @@ def screen_symbol(symbol: str) -> dict:
         total_r=total_r,
         max_drawdown_r=summary.max_drawdown_r,
     )
-    candidate = candidate_filter_result("ok", probability, total_r)
+    candidate = candidate_filter_result("ok", probability, total_r, quality["quality"])
 
     return {
         "symbol": symbol,
@@ -63,6 +64,11 @@ def screen_symbol(symbol: str) -> dict:
         "confidence": confidence,
         "historical_probability": probability,
         "similar_samples": edge.sample_size,
+        "research_quality": quality["quality"],
+        "quality_reason": quality["reason"],
+        "fallback_level": quality["fallback_level"],
+        "validation_status": quality["validation_status"],
+        "quality_warnings": "; ".join(quality["warnings"]),
         "matched_by": edge.match_description,
         "similar_win_rate": None if edge.win_rate is None else round(edge.win_rate, 3),
         "average_r": None if edge.average_r is None else round(edge.average_r, 3),

@@ -974,9 +974,10 @@ def test_screener_rank_components_match_existing_formula() -> None:
 
 
 def test_screener_candidate_filter_explains_pass_and_failures() -> None:
-    passed = candidate_filter_result("ok", historical_probability=65, total_r=1.2)
+    passed = candidate_filter_result("ok", historical_probability=65, total_r=1.2, research_quality="Moderate")
     weak_probability = candidate_filter_result("ok", historical_probability=55, total_r=1.2)
     weak_total_r = candidate_filter_result("ok", historical_probability=65, total_r=-0.1)
+    weak_quality = candidate_filter_result("ok", historical_probability=65, total_r=1.2, research_quality="Low")
     no_data = candidate_filter_result("no_data", historical_probability=None, total_r=None)
 
     assert passed["candidate_pass"] is True
@@ -985,6 +986,8 @@ def test_screener_candidate_filter_explains_pass_and_failures() -> None:
     assert "probability" in weak_probability["candidate_filter"]
     assert weak_total_r["candidate_pass"] is False
     assert "total R" in weak_total_r["candidate_filter"]
+    assert weak_quality["candidate_pass"] is False
+    assert "research quality" in weak_quality["candidate_filter"]
     assert no_data["candidate_filter"] == "Failed: no usable research result"
 
 

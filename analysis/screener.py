@@ -26,6 +26,7 @@ def candidate_filter_result(
     status: str,
     historical_probability: float | None,
     total_r: float | None,
+    research_quality: str | None = None,
     min_probability: float = 60,
 ) -> dict:
     if status != "ok":
@@ -40,8 +41,9 @@ def candidate_filter_result(
         reasons.append(f"historical probability below {min_probability:.0f}%")
     if total_r <= 0:
         reasons.append("total R is not positive")
+    if research_quality in {"Low", "No evidence"}:
+        reasons.append(f"research quality is {research_quality.lower()}")
 
     if reasons:
         return {"candidate_pass": False, "candidate_filter": "Failed: " + "; ".join(reasons)}
-    return {"candidate_pass": True, "candidate_filter": "Passed: probability threshold and positive total R"}
-
+    return {"candidate_pass": True, "candidate_filter": "Passed: probability threshold, positive total R, and usable research quality"}

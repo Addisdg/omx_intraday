@@ -497,6 +497,8 @@ Open `Stock Screener` in the Streamlit sidebar.
 
 Enter one symbol per line. The screener downloads history for each symbol, runs the current read plus historical research, and ranks the results. This is useful for finding candidates worth deeper review.
 
+Screener rows include research quality, fallback level, validation status, matched dimensions, and quality warnings. A symbol must pass probability, positive-total-R, and usable-quality filters before appearing as a higher-quality candidate.
+
 ## API And Mobile Path
 
 The app now has a FastAPI-compatible service boundary.
