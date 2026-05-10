@@ -27,7 +27,7 @@ from analysis.research import (
     probability_from_edge,
     run_historical_research,
 )
-from analysis.screener import calculate_rank_components, candidate_filter_result
+from analysis.screener import calculate_rank_components, candidate_filter_result, select_screener_columns
 from analysis.signals import classify_signal
 from analysis.timeframes import compare_timeframes
 from analysis.trade_engine import TradePlan, build_trade_plan, calculate_position_size
@@ -989,6 +989,23 @@ def test_screener_candidate_filter_explains_pass_and_failures() -> None:
     assert weak_quality["candidate_pass"] is False
     assert "research quality" in weak_quality["candidate_filter"]
     assert no_data["candidate_filter"] == "Failed: no usable research result"
+
+
+def test_screener_column_presets_keep_tables_focused() -> None:
+    columns = [
+        "symbol",
+        "rank_score",
+        "candidate_pass",
+        "research_quality",
+        "fallback_level",
+        "similar_win_rate",
+        "unknown_extra",
+    ]
+
+    assert select_screener_columns(columns, "ranking") == ["symbol", "rank_score", "candidate_pass"]
+    assert select_screener_columns(columns, "quality") == ["symbol", "research_quality", "fallback_level"]
+    assert select_screener_columns(columns, "research") == ["symbol", "similar_win_rate"]
+    assert select_screener_columns(columns, "missing") == []
 
 
 def test_service_analyze_dataframe_returns_current_read() -> None:

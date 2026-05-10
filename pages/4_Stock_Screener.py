@@ -3,7 +3,7 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
-from analysis.screener import calculate_rank_components, candidate_filter_result
+from analysis.screener import calculate_rank_components, candidate_filter_result, select_screener_columns
 from data.provider_yfinance import YFinanceProvider
 from services.market_analysis import research_dataframe
 
@@ -93,8 +93,35 @@ if st.sidebar.button("Run screener", type="primary"):
         progress.progress(idx / len(symbols))
 
     results = pd.DataFrame(rows).sort_values("rank_score", ascending=False)
-    st.subheader("Ranked Results")
-    st.dataframe(results, use_container_width=True, hide_index=True)
+    ranking_tab, quality_tab, research_tab, all_tab = st.tabs(["Ranking", "Quality", "Research", "All Columns"])
+
+    with ranking_tab:
+        st.subheader("Ranked Results")
+        st.dataframe(
+            results[select_screener_columns(list(results.columns), "ranking")],
+            use_container_width=True,
+            hide_index=True,
+        )
+
+    with quality_tab:
+        st.subheader("Research Quality")
+        st.dataframe(
+            results[select_screener_columns(list(results.columns), "quality")],
+            use_container_width=True,
+            hide_index=True,
+        )
+
+    with research_tab:
+        st.subheader("Research Details")
+        st.dataframe(
+            results[select_screener_columns(list(results.columns), "research")],
+            use_container_width=True,
+            hide_index=True,
+        )
+
+    with all_tab:
+        st.subheader("All Screener Columns")
+        st.dataframe(results, use_container_width=True, hide_index=True)
 
     candidates = results[results["candidate_pass"] == True]
     st.subheader("Higher-Quality Candidates")

@@ -1,6 +1,41 @@
 from __future__ import annotations
 
 
+SCREENER_TABLE_COLUMNS = {
+    "ranking": [
+        "symbol",
+        "rank_score",
+        "candidate_pass",
+        "candidate_filter",
+        "setup",
+        "signal",
+        "confidence",
+        "historical_probability",
+        "total_r",
+        "max_drawdown_r",
+    ],
+    "quality": [
+        "symbol",
+        "research_quality",
+        "similar_samples",
+        "fallback_level",
+        "validation_status",
+        "quality_warnings",
+        "matched_by",
+    ],
+    "research": [
+        "symbol",
+        "similar_win_rate",
+        "average_r",
+        "decision",
+        "confidence_contribution",
+        "probability_contribution",
+        "total_r_contribution",
+        "drawdown_penalty",
+    ],
+}
+
+
 def calculate_rank_components(
     confidence: float,
     historical_probability: float,
@@ -47,3 +82,8 @@ def candidate_filter_result(
     if reasons:
         return {"candidate_pass": False, "candidate_filter": "Failed: " + "; ".join(reasons)}
     return {"candidate_pass": True, "candidate_filter": "Passed: probability threshold, positive total R, and usable research quality"}
+
+
+def select_screener_columns(columns: list[str], preset: str) -> list[str]:
+    preferred = SCREENER_TABLE_COLUMNS.get(preset, [])
+    return [column for column in preferred if column in columns]
