@@ -20,6 +20,7 @@ from analysis.levels import find_levels
 from analysis.market_hours import format_timestamp, infer_market
 from analysis.market_structure import classify_structure
 from analysis.research import build_similarity_context, estimate_historical_edge, probability_from_edge, run_historical_research
+from analysis.screener import calculate_rank_components, candidate_filter_result
 from analysis.signals import classify_signal
 from analysis.timeframes import compare_timeframes
 from analysis.trade_engine import TradePlan, build_trade_plan, calculate_position_size
@@ -656,6 +657,36 @@ def test_similarity_context_builds_buckets() -> None:
     assert context["trend_bias"] == "BULLISH"
     assert context["confidence_bucket"] == "high"
     assert context["rr_bucket"] == "acceptable"
+
+
+def test_screener_rank_components_match_existing_formula() -> None:
+    rank = calculate_rank_components(
+        confidence=80,
+        historical_probability=70,
+        total_r=3.5,
+        max_drawdown_r=-1.25,
+    )
+
+    assert rank["confidence_contribution"] == 28.0
+    assert rank["probability_contribution"] == 24.5
+    assert rank["total_r_contribution"] == 17.5
+    assert rank["drawdown_penalty"] == 3.75
+    assert rank["rank_score"] == 66.25
+
+
+def test_screener_candidate_filter_explains_pass_and_failures() -> None:
+    passed = candidate_filter_result("ok", historical_probability=65, total_r=1.2)
+    weak_probability = candidate_filter_result("ok", historical_probability=55, total_r=1.2)
+    weak_total_r = candidate_filter_result("ok", historical_probability=65, total_r=-0.1)
+    no_data = candidate_filter_result("no_data", historical_probability=None, total_r=None)
+
+    assert passed["candidate_pass"] is True
+    assert "Passed" in passed["candidate_filter"]
+    assert weak_probability["candidate_pass"] is False
+    assert "probability" in weak_probability["candidate_filter"]
+    assert weak_total_r["candidate_pass"] is False
+    assert "total R" in weak_total_r["candidate_filter"]
+    assert no_data["candidate_filter"] == "Failed: no usable research result"
 
 
 def test_service_analyze_dataframe_returns_current_read() -> None:

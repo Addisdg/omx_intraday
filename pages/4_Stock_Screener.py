@@ -3,6 +3,7 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
+from analysis.screener import calculate_rank_components, candidate_filter_result
 from data.provider_yfinance import YFinanceProvider
 from services.market_analysis import research_dataframe
 
@@ -35,7 +36,8 @@ def screen_symbol(symbol: str) -> dict:
         max_hold_bars=max_hold_bars,
     )
     if result["status"] != "ok":
-        return {"symbol": symbol, "status": "no_data", "rank_score": 0}
+        candidate = candidate_filter_result("no_data", None, None)
+        return {"symbol": symbol, "status": "no_data", "rank_score": 0, **candidate}
 
     current = result["current"]
     research = result["research"]
@@ -44,8 +46,13 @@ def screen_symbol(symbol: str) -> dict:
     confidence = current["confidence"]["score"]
     probability = research["probability"]
     total_r = summary.total_r
-    drawdown_penalty = abs(summary.max_drawdown_r)
-    rank_score = confidence * 0.35 + probability * 0.35 + total_r * 5 - drawdown_penalty * 3
+    rank = calculate_rank_components(
+        confidence=confidence,
+        historical_probability=probability,
+        total_r=total_r,
+        max_drawdown_r=summary.max_drawdown_r,
+    )
+    candidate = candidate_filter_result("ok", probability, total_r)
 
     return {
         "symbol": symbol,
@@ -61,8 +68,13 @@ def screen_symbol(symbol: str) -> dict:
         "average_r": None if edge.average_r is None else round(edge.average_r, 3),
         "total_r": round(total_r, 3),
         "max_drawdown_r": round(summary.max_drawdown_r, 3),
+        "confidence_contribution": rank["confidence_contribution"],
+        "probability_contribution": rank["probability_contribution"],
+        "total_r_contribution": rank["total_r_contribution"],
+        "drawdown_penalty": rank["drawdown_penalty"],
         "decision": research["decision"],
-        "rank_score": round(rank_score, 2),
+        "rank_score": rank["rank_score"],
+        **candidate,
     }
 
 
@@ -78,11 +90,7 @@ if st.sidebar.button("Run screener", type="primary"):
     st.subheader("Ranked Results")
     st.dataframe(results, use_container_width=True, hide_index=True)
 
-    candidates = results[
-        (results["status"] == "ok")
-        & (results["historical_probability"] >= 60)
-        & (results["total_r"] > 0)
-    ]
+    candidates = results[results["candidate_pass"] == True]
     st.subheader("Higher-Quality Candidates")
     if candidates.empty:
         st.info("No symbols passed the candidate filter.")
