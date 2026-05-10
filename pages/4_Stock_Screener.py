@@ -3,7 +3,7 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
-from analysis.screener import calculate_rank_components, candidate_filter_result, select_screener_columns
+from analysis.screener import calculate_rank_components, candidate_filter_result, screener_failure_row, select_screener_columns
 from data.provider_yfinance import YFinanceProvider
 from services.market_analysis import research_dataframe
 
@@ -36,8 +36,7 @@ def screen_symbol(symbol: str) -> dict:
         max_hold_bars=max_hold_bars,
     )
     if result["status"] != "ok":
-        candidate = candidate_filter_result("no_data", None, None)
-        return {"symbol": symbol, "status": "no_data", "rank_score": 0, **candidate}
+        return screener_failure_row(symbol, result["status"], f"Research returned status {result['status']}")
 
     current = result["current"]
     research = result["research"]
@@ -86,13 +85,25 @@ def screen_symbol(symbol: str) -> dict:
 
 if st.sidebar.button("Run screener", type="primary"):
     symbols = [line.strip() for line in symbols_text.splitlines() if line.strip()]
+    if not symbols:
+        st.warning("Enter at least one symbol to run the screener.")
+        st.stop()
     rows = []
     progress = st.progress(0)
+    status_line = st.empty()
     for idx, symbol in enumerate(symbols, start=1):
-        rows.append(screen_symbol(symbol))
+        status_line.caption(f"Screening {symbol} ({idx}/{len(symbols)})")
+        try:
+            rows.append(screen_symbol(symbol))
+        except Exception as exc:
+            rows.append(screener_failure_row(symbol, "error", str(exc)))
         progress.progress(idx / len(symbols))
+    status_line.caption(f"Finished screening {len(symbols)} symbols.")
 
     results = pd.DataFrame(rows).sort_values("rank_score", ascending=False)
+    failed = results[results["status"] != "ok"] if "status" in results else pd.DataFrame()
+    if not failed.empty:
+        st.warning(f"{len(failed)} symbol(s) did not produce usable research. See the Quality tab for details.")
     ranking_tab, quality_tab, research_tab, all_tab = st.tabs(["Ranking", "Quality", "Research", "All Columns"])
 
     with ranking_tab:

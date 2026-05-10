@@ -27,7 +27,7 @@ from analysis.research import (
     probability_from_edge,
     run_historical_research,
 )
-from analysis.screener import calculate_rank_components, candidate_filter_result, select_screener_columns
+from analysis.screener import calculate_rank_components, candidate_filter_result, screener_failure_row, select_screener_columns
 from analysis.signals import classify_signal
 from analysis.timeframes import compare_timeframes
 from analysis.trade_engine import TradePlan, build_trade_plan, calculate_position_size
@@ -994,6 +994,8 @@ def test_screener_candidate_filter_explains_pass_and_failures() -> None:
 def test_screener_column_presets_keep_tables_focused() -> None:
     columns = [
         "symbol",
+        "status",
+        "status_reason",
         "rank_score",
         "candidate_pass",
         "research_quality",
@@ -1002,10 +1004,28 @@ def test_screener_column_presets_keep_tables_focused() -> None:
         "unknown_extra",
     ]
 
-    assert select_screener_columns(columns, "ranking") == ["symbol", "rank_score", "candidate_pass"]
-    assert select_screener_columns(columns, "quality") == ["symbol", "research_quality", "fallback_level"]
+    assert select_screener_columns(columns, "ranking") == [
+        "symbol",
+        "status",
+        "status_reason",
+        "rank_score",
+        "candidate_pass",
+    ]
+    assert select_screener_columns(columns, "quality") == ["symbol", "status", "research_quality", "fallback_level"]
     assert select_screener_columns(columns, "research") == ["symbol", "similar_win_rate"]
     assert select_screener_columns(columns, "missing") == []
+
+
+def test_screener_failure_row_explains_symbol_failures() -> None:
+    row = screener_failure_row("BAD", "error", "download failed")
+
+    assert row["symbol"] == "BAD"
+    assert row["status"] == "error"
+    assert row["rank_score"] == 0
+    assert row["candidate_pass"] is False
+    assert row["research_quality"] == "No evidence"
+    assert row["status_reason"] == "download failed"
+    assert "no usable research result" in row["candidate_filter"]
 
 
 def test_service_analyze_dataframe_returns_current_read() -> None:

@@ -4,6 +4,8 @@ from __future__ import annotations
 SCREENER_TABLE_COLUMNS = {
     "ranking": [
         "symbol",
+        "status",
+        "status_reason",
         "rank_score",
         "candidate_pass",
         "candidate_filter",
@@ -16,6 +18,7 @@ SCREENER_TABLE_COLUMNS = {
     ],
     "quality": [
         "symbol",
+        "status",
         "research_quality",
         "similar_samples",
         "fallback_level",
@@ -82,6 +85,25 @@ def candidate_filter_result(
     if reasons:
         return {"candidate_pass": False, "candidate_filter": "Failed: " + "; ".join(reasons)}
     return {"candidate_pass": True, "candidate_filter": "Passed: probability threshold, positive total R, and usable research quality"}
+
+
+def screener_failure_row(symbol: str, status: str, reason: str) -> dict:
+    candidate = candidate_filter_result(status, None, None)
+    return {
+        "symbol": symbol,
+        "status": status,
+        "status_reason": reason,
+        "rank_score": 0,
+        "research_quality": "No evidence",
+        "quality_reason": reason,
+        "fallback_level": "none",
+        "validation_status": "not_run",
+        "quality_warnings": reason,
+        "similar_samples": 0,
+        "matched_by": "none",
+        "decision": "Research only: no usable result",
+        **candidate,
+    }
 
 
 def select_screener_columns(columns: list[str], preset: str) -> list[str]:
