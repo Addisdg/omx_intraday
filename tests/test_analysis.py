@@ -42,7 +42,7 @@ from analysis.volatility import analyze_volatility_regime
 from analysis.volume import analyze_volume
 from config.settings import load_settings, save_settings
 from data.cache import load_cached_data, save_cached_data
-from data.provider_base import ProviderRateLimitError, ProviderSchemaError, ProviderTimeoutError
+from data.provider_base import ProviderRateLimitError, ProviderSchemaError, ProviderTimeoutError, ProviderUnexpectedError
 from data.provider_yfinance import YFinanceProvider
 from services.market_analysis import analyze_dataframe, research_dataframe
 from ui.labels import setup_label
@@ -1040,6 +1040,7 @@ def test_screener_failure_row_explains_symbol_failures() -> None:
 def test_screener_exception_classifier_maps_common_provider_failures() -> None:
     typed_timeout = classify_screener_exception(ProviderTimeoutError("internal timeout detail"))
     typed_rate_limit = classify_screener_exception(ProviderRateLimitError("429"))
+    typed_unexpected = classify_screener_exception(ProviderUnexpectedError("raw provider detail"))
     timeout = classify_screener_exception(TimeoutError("request timed out"))
     connection = classify_screener_exception(ConnectionError("DNS lookup failed"))
     schema = classify_screener_exception(ValueError("Missing expected columns: ['close']"))
@@ -1049,6 +1050,8 @@ def test_screener_exception_classifier_maps_common_provider_failures() -> None:
     assert typed_timeout["status"] == "provider_timeout"
     assert typed_timeout["reason"] == "Market-data provider timed out for this symbol."
     assert typed_rate_limit["status"] == "provider_rate_limited"
+    assert typed_unexpected["status"] == "provider_unexpected_error"
+    assert typed_unexpected["reason"] == "Market-data provider failed unexpectedly for this symbol."
     assert timeout["status"] == "provider_timeout"
     assert "timed out" in timeout["reason"]
     assert connection["status"] == "provider_connection_error"
@@ -1094,6 +1097,20 @@ def test_yfinance_provider_wraps_provider_timeouts(monkeypatch) -> None:
 
     with pytest.raises(ProviderTimeoutError):
         YFinanceProvider().get_history("BAD", interval="1d", period="1mo", save_to_cache=False)
+
+
+def test_yfinance_provider_wraps_unexpected_provider_errors(monkeypatch) -> None:
+    def fake_download(**kwargs) -> pd.DataFrame:
+        raise RuntimeError("strange provider problem")
+
+    import data.provider_yfinance as provider_module
+
+    monkeypatch.setattr(provider_module.yf, "download", fake_download)
+
+    with pytest.raises(ProviderUnexpectedError) as exc_info:
+        YFinanceProvider().get_history("BAD", interval="1d", period="1mo", save_to_cache=False)
+
+    assert isinstance(exc_info.value.__cause__, RuntimeError)
 
 
 def test_service_analyze_dataframe_returns_current_read() -> None:

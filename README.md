@@ -251,7 +251,7 @@ timestamp, open, high, low, close, volume
 
 This keeps the rest of the app independent from the exact column names returned by `yfinance`.
 
-Provider failures use typed exceptions from `data/provider_base.py` for common timeout, connection, rate-limit, and schema problems. This lets UI surfaces such as the screener show stable failure categories instead of relying only on raw third-party exception text.
+Provider failures use typed exceptions from `data/provider_base.py` for common timeout, connection, rate-limit, schema, and unexpected provider problems. This lets UI surfaces such as the screener show stable failure categories instead of relying only on raw third-party exception text.
 
 ### `analysis/levels.py`
 

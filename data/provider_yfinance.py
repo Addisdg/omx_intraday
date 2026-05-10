@@ -10,6 +10,7 @@ from data.provider_base import (
     ProviderRateLimitError,
     ProviderSchemaError,
     ProviderTimeoutError,
+    ProviderUnexpectedError,
 )
 
 
@@ -111,4 +112,4 @@ def _provider_error_from_exception(exc: Exception) -> Exception:
         return ProviderRateLimitError(str(exc))
     if isinstance(exc, ConnectionError) or any(term in message for term in ["connection", "network", "dns", "name resolution"]):
         return ProviderConnectionError(str(exc))
-    return exc
+    return ProviderUnexpectedError(str(exc))

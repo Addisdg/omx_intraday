@@ -29,6 +29,11 @@ class ProviderSchemaError(MarketDataError):
     user_message = "Market-data provider returned an unexpected data shape."
 
 
+class ProviderUnexpectedError(MarketDataError):
+    status = "provider_unexpected_error"
+    user_message = "Market-data provider failed unexpectedly for this symbol."
+
+
 class MarketDataProvider(ABC):
     @abstractmethod
     def get_intraday(self, symbol: str, interval: str = "1m") -> pd.DataFrame:
