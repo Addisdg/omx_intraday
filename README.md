@@ -489,6 +489,8 @@ It does not predict the future directly. Instead, it compares the current setup 
 
 Similarity starts with setup type, then attempts to match context such as structure, trend bias, volume state, R/R bucket, confidence bucket, and market-regime states for trend, range, and breakout context. If strict matching leaves too few samples, research falls back toward setup-only matching and shows what dimensions were actually used.
 
+The page also shows a research-quality panel with matched sample size, replayed trade count, fallback level, matched dimensions, warnings, and out-of-sample validation status. This keeps weak evidence visible instead of hiding it behind a probability-style number.
+
 ## Stock Screening
 
 Open `Stock Screener` in the Streamlit sidebar.

@@ -140,6 +140,12 @@ def run_historical_research(
         if train_fraction is not None
         else None
     )
+    quality = assess_research_quality(
+        edge=edge,
+        summary=summary,
+        context=context,
+        validation=validation,
+    )
 
     return {
         "trades": trades,
@@ -147,9 +153,42 @@ def run_historical_research(
         "by_setup": by_setup,
         "edge": edge,
         "similarity_context": context,
+        "quality": quality,
         "probability": probability,
         "validation": validation,
         "decision": decision_label(probability, edge, summary, validation),
+    }
+
+
+def assess_research_quality(
+    edge: HistoricalEdge,
+    summary: BacktestSummary,
+    context: dict | None = None,
+    validation: dict | None = None,
+    min_sample: int = 5,
+) -> dict:
+    requested_dimensions = tuple(
+        dimension for dimension in SIMILARITY_DIMENSIONS if context and context.get(dimension) is not None
+    )
+    matched_count = len(edge.matched_dimensions)
+    requested_count = len(requested_dimensions)
+    fallback_level = _fallback_level(matched_count, requested_count)
+    validation_status = _validation_status(validation)
+    warnings = _quality_warnings(edge, summary, fallback_level, validation_status, min_sample)
+    quality = _quality_grade(edge, fallback_level, validation_status, min_sample)
+
+    return {
+        "quality": quality,
+        "sample_size": edge.sample_size,
+        "minimum_sample": min_sample,
+        "total_replayed_trades": summary.trades,
+        "matched_dimensions": edge.matched_dimensions,
+        "requested_dimensions": requested_dimensions,
+        "match_description": edge.match_description,
+        "fallback_level": fallback_level,
+        "validation_status": validation_status,
+        "warnings": warnings,
+        "reason": _quality_reason(quality, edge.sample_size, fallback_level, validation_status),
     }
 
 
@@ -170,6 +209,84 @@ def decision_label(
     if probability <= 40 or (edge.average_r is not None and edge.average_r <= 0):
         return "Avoid or wait: historical edge is weak"
     return "Neutral: wait for stronger confirmation"
+
+
+def _fallback_level(matched_count: int, requested_count: int) -> str:
+    if requested_count == 0 or matched_count == 0:
+        return "setup_only"
+    if matched_count == requested_count:
+        return "full_context"
+    return "partial_context"
+
+
+def _validation_status(validation: dict | None) -> str:
+    if validation is None:
+        return "not_run"
+    verdict = validation.get("verdict", "")
+    out_summary = validation.get("out_of_sample_summary")
+    if out_summary is not None and getattr(out_summary, "trades", 0) == 0:
+        return "no_out_of_sample_trades"
+    if "supports" in verdict.lower():
+        return "supported"
+    if "did not hold" in verdict.lower():
+        return "failed"
+    if "not enough" in verdict.lower():
+        return "insufficient_data"
+    return "mixed"
+
+
+def _quality_warnings(
+    edge: HistoricalEdge,
+    summary: BacktestSummary,
+    fallback_level: str,
+    validation_status: str,
+    min_sample: int,
+) -> list[str]:
+    warnings = []
+    if summary.trades == 0:
+        warnings.append("No replayed trades were generated for this run.")
+    if edge.sample_size < min_sample:
+        warnings.append("Similar setup sample is below the minimum reliability threshold.")
+    if fallback_level == "setup_only":
+        warnings.append("Similarity fell back to setup-only matching.")
+    elif fallback_level == "partial_context":
+        warnings.append("Similarity used partial context because stricter matching had too few samples.")
+    if validation_status in {"failed", "no_out_of_sample_trades", "insufficient_data"}:
+        warnings.append("Out-of-sample validation does not strongly support the historical read.")
+    if validation_status == "not_run":
+        warnings.append("Out-of-sample validation was not run.")
+    return warnings
+
+
+def _quality_grade(
+    edge: HistoricalEdge,
+    fallback_level: str,
+    validation_status: str,
+    min_sample: int,
+) -> str:
+    if edge.sample_size == 0:
+        return "No evidence"
+    if edge.sample_size < min_sample:
+        return "Low"
+    if validation_status in {"failed", "no_out_of_sample_trades", "insufficient_data"}:
+        return "Low"
+    if fallback_level == "full_context" and edge.sample_size >= min_sample * 2 and validation_status == "supported":
+        return "High"
+    if fallback_level in {"full_context", "partial_context"}:
+        return "Moderate"
+    return "Low"
+
+
+def _quality_reason(
+    quality: str,
+    sample_size: int,
+    fallback_level: str,
+    validation_status: str,
+) -> str:
+    return (
+        f"Research quality is {quality.lower()} with {sample_size} similar samples, "
+        f"{fallback_level.replace('_', ' ')} matching, and validation status {validation_status.replace('_', ' ')}."
+    )
 
 
 def build_similarity_context(

@@ -5,6 +5,7 @@ import pandas as pd
 import pytest
 
 from analysis.backtest import (
+    BacktestSummary,
     equity_curve,
     optimize_parameters,
     replay_strategy,
@@ -19,7 +20,13 @@ from analysis.indicators import add_indicators, summarize_indicator_context
 from analysis.levels import find_levels
 from analysis.market_hours import format_timestamp, infer_market
 from analysis.market_structure import analyze_market_regime, classify_structure
-from analysis.research import build_similarity_context, estimate_historical_edge, probability_from_edge, run_historical_research
+from analysis.research import (
+    assess_research_quality,
+    build_similarity_context,
+    estimate_historical_edge,
+    probability_from_edge,
+    run_historical_research,
+)
 from analysis.screener import calculate_rank_components, candidate_filter_result
 from analysis.signals import classify_signal
 from analysis.timeframes import compare_timeframes
@@ -879,6 +886,78 @@ def test_similarity_context_builds_buckets() -> None:
     assert context["regime_breakout_state"] == "upside_breakout"
 
 
+def test_research_quality_flags_setup_only_low_sample_runs() -> None:
+    edge = estimate_historical_edge(
+        pd.DataFrame(
+            [
+                {"setup": "BUY_BREAKOUT", "outcome": "target", "r_multiple": 2.0},
+                {"setup": "BUY_BREAKOUT", "outcome": "stop", "r_multiple": -1.0},
+            ]
+        ),
+        "BUY_BREAKOUT",
+        context={"structure": "breakout"},
+        min_sample=5,
+    )
+    quality = assess_research_quality(
+        edge=edge,
+        summary=BacktestSummary(
+            trades=2,
+            wins=1,
+            losses=1,
+            open_trades=0,
+            win_rate=0.5,
+            average_rr=2.0,
+            total_r=1.0,
+            max_drawdown_r=-1.0,
+        ),
+        context={"structure": "breakout"},
+        validation=None,
+        min_sample=5,
+    )
+
+    assert quality["quality"] == "Low"
+    assert quality["fallback_level"] == "setup_only"
+    assert quality["validation_status"] == "not_run"
+    assert any("sample is below" in warning for warning in quality["warnings"])
+    assert any("setup-only" in warning for warning in quality["warnings"])
+
+
+def test_research_quality_can_report_high_quality_full_context() -> None:
+    edge = estimate_historical_edge(
+        pd.DataFrame(
+            [
+                {
+                    "setup": "BUY_BREAKOUT",
+                    "structure": "breakout",
+                    "outcome": "target",
+                    "r_multiple": 2.0,
+                }
+            ]
+            * 10
+        ),
+        "BUY_BREAKOUT",
+        context={"structure": "breakout"},
+        min_sample=5,
+    )
+    validation = {
+        "verdict": "Out-of-sample validation supports the in-sample result",
+        "out_of_sample_summary": BacktestSummary(3, 2, 1, 0, 0.67, 2.0, 3.0, -1.0),
+    }
+
+    quality = assess_research_quality(
+        edge=edge,
+        summary=BacktestSummary(10, 10, 0, 0, 1.0, 2.0, 20.0, 0.0),
+        context={"structure": "breakout"},
+        validation=validation,
+        min_sample=5,
+    )
+
+    assert quality["quality"] == "High"
+    assert quality["fallback_level"] == "full_context"
+    assert quality["validation_status"] == "supported"
+    assert quality["warnings"] == []
+
+
 def test_screener_rank_components_match_existing_formula() -> None:
     rank = calculate_rank_components(
         confidence=80,
@@ -943,6 +1022,8 @@ def test_service_research_dataframe_returns_research_bundle() -> None:
     assert "current" in result
     assert "research" in result
     assert "validation" in result["research"]
+    assert "quality" in result["research"]
+    assert result["research"]["quality"]["reason"]
 
 
 def test_run_historical_research_returns_decision() -> None:

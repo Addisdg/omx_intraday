@@ -53,6 +53,7 @@ if st.sidebar.button("Run research", type="primary"):
     research = result["research"]
     summary = research["summary"]
     edge = research["edge"]
+    quality = research["quality"]
     trades = research["trades"]
     validation = research["validation"]
 
@@ -68,6 +69,27 @@ if st.sidebar.button("Run research", type="primary"):
     st.write(f"**Setup scenario:** {current['setup_label']}")
     st.write(f"**Structure:** {current['structure']}")
     st.write(f"**Volume:** {current['volume']['volume_state']} ({current['volume']['relative_volume']}x)")
+
+    st.subheader("Research Quality")
+    q1, q2, q3, q4 = st.columns(4)
+    q1.metric("Quality", quality["quality"])
+    q2.metric("Matched samples", f"{quality['sample_size']}/{quality['minimum_sample']} min")
+    q3.metric("Replay trades", quality["total_replayed_trades"])
+    q4.metric("Validation", quality["validation_status"].replace("_", " ").title())
+    st.caption(quality["reason"])
+    with st.expander("Research quality details", expanded=False):
+        st.write(f"**Fallback level:** {quality['fallback_level'].replace('_', ' ')}")
+        st.write(f"**Matched by:** {quality['match_description']}")
+        st.write(
+            "**Requested dimensions:** "
+            + (", ".join(quality["requested_dimensions"]) if quality["requested_dimensions"] else "setup only")
+        )
+        st.write(
+            "**Matched dimensions:** "
+            + (", ".join(quality["matched_dimensions"]) if quality["matched_dimensions"] else "setup only")
+        )
+        for warning in quality["warnings"]:
+            st.warning(warning)
 
     st.subheader("Historical Edge For Similar Setup")
     st.write(f"**Verdict:** {edge.verdict}")
