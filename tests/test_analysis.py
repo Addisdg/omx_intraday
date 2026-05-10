@@ -332,7 +332,16 @@ def test_backtest_replay_returns_summary() -> None:
 
     assert summary.trades == len(trades)
     if not trades.empty:
-        assert {"structure", "volume_state", "confidence_bucket", "rr_bucket", "trend_bias"}.issubset(trades.columns)
+        assert {
+            "structure",
+            "volume_state",
+            "confidence_bucket",
+            "rr_bucket",
+            "trend_bias",
+            "regime_trend_state",
+            "regime_range_state",
+            "regime_breakout_state",
+        }.issubset(trades.columns)
 
 
 def test_backtest_replay_decision_pipeline_uses_history_only(monkeypatch) -> None:
@@ -343,9 +352,14 @@ def test_backtest_replay_decision_pipeline_uses_history_only(monkeypatch) -> Non
         assert history["timestamp"].max() < all_candles.iloc[len(history)]["timestamp"]
         return {"supports": [], "resistances": []}
 
-    def fake_classify_structure(history: pd.DataFrame, **kwargs) -> str:
+    def fake_analyze_market_regime(history: pd.DataFrame, **kwargs) -> dict:
         assert history["timestamp"].max() < all_candles.iloc[len(history)]["timestamp"]
-        return "range"
+        return {
+            "structure": "range",
+            "trend_state": "flat",
+            "range_state": "compressed",
+            "breakout_state": "none",
+        }
 
     def fake_build_trade_plan(df: pd.DataFrame, **kwargs) -> TradePlan:
         observed_decision_timestamps.append(df.iloc[-1]["timestamp"])
@@ -353,7 +367,7 @@ def test_backtest_replay_decision_pipeline_uses_history_only(monkeypatch) -> Non
         return TradePlan("NEUTRAL", "WAIT", None, None, None, None, None, None, None, None, "test")
 
     monkeypatch.setattr(backtest_module, "find_levels", fake_find_levels)
-    monkeypatch.setattr(backtest_module, "classify_structure", fake_classify_structure)
+    monkeypatch.setattr(backtest_module, "analyze_market_regime", fake_analyze_market_regime)
     monkeypatch.setattr(backtest_module, "build_trade_plan", fake_build_trade_plan)
 
     trades = replay_strategy(all_candles, warmup=3, max_hold_bars=2)
@@ -384,7 +398,16 @@ def test_backtest_replay_records_anti_lookahead_audit_timestamps(monkeypatch) ->
         )
 
     monkeypatch.setattr(backtest_module, "find_levels", lambda *args, **kwargs: {"supports": [], "resistances": []})
-    monkeypatch.setattr(backtest_module, "classify_structure", lambda *args, **kwargs: "breakout")
+    monkeypatch.setattr(
+        backtest_module,
+        "analyze_market_regime",
+        lambda *args, **kwargs: {
+            "structure": "breakout",
+            "trend_state": "rising",
+            "range_state": "normal",
+            "breakout_state": "upside_breakout",
+        },
+    )
     monkeypatch.setattr(backtest_module, "build_trade_plan", fake_build_trade_plan)
 
     trades = replay_strategy(all_candles, warmup=3, max_hold_bars=2, prevent_overlaps=True)
@@ -694,6 +717,9 @@ def test_historical_edge_uses_contextual_similarity_when_sample_is_large_enough(
                 "volume_state": "spike",
                 "rr_bucket": "acceptable",
                 "confidence_bucket": "high",
+                "regime_trend_state": "rising",
+                "regime_range_state": "normal",
+                "regime_breakout_state": "upside_breakout",
                 "outcome": "target",
                 "r_multiple": 2.0,
             },
@@ -704,6 +730,9 @@ def test_historical_edge_uses_contextual_similarity_when_sample_is_large_enough(
                 "volume_state": "spike",
                 "rr_bucket": "acceptable",
                 "confidence_bucket": "high",
+                "regime_trend_state": "rising",
+                "regime_range_state": "normal",
+                "regime_breakout_state": "upside_breakout",
                 "outcome": "stop",
                 "r_multiple": -1.0,
             },
@@ -714,6 +743,9 @@ def test_historical_edge_uses_contextual_similarity_when_sample_is_large_enough(
                 "volume_state": "quiet",
                 "rr_bucket": "weak",
                 "confidence_bucket": "low",
+                "regime_trend_state": "falling",
+                "regime_range_state": "wide",
+                "regime_breakout_state": "downside_breakout",
                 "outcome": "stop",
                 "r_multiple": -1.0,
             },
@@ -725,13 +757,83 @@ def test_historical_edge_uses_contextual_similarity_when_sample_is_large_enough(
         "volume_state": "spike",
         "rr_bucket": "acceptable",
         "confidence_bucket": "high",
+        "regime_trend_state": "rising",
+        "regime_range_state": "normal",
+        "regime_breakout_state": "upside_breakout",
     }
 
     edge = estimate_historical_edge(trades, "BUY_BREAKOUT", context=context, min_sample=2)
 
     assert edge.sample_size == 2
-    assert edge.matched_dimensions == ("structure", "trend_bias", "volume_state", "rr_bucket", "confidence_bucket")
-    assert edge.match_description == "setup + structure + trend bias + volume state + rr bucket + confidence bucket"
+    assert edge.matched_dimensions == (
+        "structure",
+        "trend_bias",
+        "volume_state",
+        "rr_bucket",
+        "confidence_bucket",
+        "regime_trend_state",
+        "regime_range_state",
+        "regime_breakout_state",
+    )
+    assert (
+        edge.match_description
+        == "setup + structure + trend bias + volume state + rr bucket + confidence bucket + regime trend state + regime range state + regime breakout state"
+    )
+
+
+def test_historical_edge_backs_off_regime_dimensions_when_sample_is_too_small() -> None:
+    trades = pd.DataFrame(
+        [
+            {
+                "setup": "BUY_BREAKOUT",
+                "structure": "breakout",
+                "trend_bias": "BULLISH",
+                "volume_state": "spike",
+                "rr_bucket": "acceptable",
+                "confidence_bucket": "high",
+                "regime_trend_state": "rising",
+                "regime_range_state": "normal",
+                "regime_breakout_state": "upside_breakout",
+                "outcome": "target",
+                "r_multiple": 2.0,
+            },
+            {
+                "setup": "BUY_BREAKOUT",
+                "structure": "breakout",
+                "trend_bias": "BULLISH",
+                "volume_state": "spike",
+                "rr_bucket": "acceptable",
+                "confidence_bucket": "high",
+                "regime_trend_state": "rising",
+                "regime_range_state": "wide",
+                "regime_breakout_state": "upside_breakout",
+                "outcome": "stop",
+                "r_multiple": -1.0,
+            },
+        ]
+    )
+    context = {
+        "structure": "breakout",
+        "trend_bias": "BULLISH",
+        "volume_state": "spike",
+        "rr_bucket": "acceptable",
+        "confidence_bucket": "high",
+        "regime_trend_state": "rising",
+        "regime_range_state": "normal",
+        "regime_breakout_state": "upside_breakout",
+    }
+
+    edge = estimate_historical_edge(trades, "BUY_BREAKOUT", context=context, min_sample=2)
+
+    assert edge.sample_size == 2
+    assert edge.matched_dimensions == (
+        "structure",
+        "trend_bias",
+        "volume_state",
+        "rr_bucket",
+        "confidence_bucket",
+        "regime_trend_state",
+    )
 
 
 def test_historical_edge_falls_back_when_strict_similarity_has_too_few_samples() -> None:
@@ -762,11 +864,19 @@ def test_similarity_context_builds_buckets() -> None:
         confidence_score=82,
         volume_state="spike",
         rr_ratio=2.4,
+        market_regime={
+            "trend_state": "rising",
+            "range_state": "normal",
+            "breakout_state": "upside_breakout",
+        },
     )
 
     assert context["trend_bias"] == "BULLISH"
     assert context["confidence_bucket"] == "high"
     assert context["rr_bucket"] == "acceptable"
+    assert context["regime_trend_state"] == "rising"
+    assert context["regime_range_state"] == "normal"
+    assert context["regime_breakout_state"] == "upside_breakout"
 
 
 def test_screener_rank_components_match_existing_formula() -> None:

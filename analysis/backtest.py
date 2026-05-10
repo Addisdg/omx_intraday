@@ -6,7 +6,7 @@ import pandas as pd
 
 from analysis.confidence import score_setup
 from analysis.levels import find_levels
-from analysis.market_structure import classify_structure
+from analysis.market_structure import analyze_market_regime
 from analysis.signals import classify_signal
 from analysis.timeframes import bias_from_structure
 from analysis.trade_engine import TradePlan, build_trade_plan
@@ -47,7 +47,8 @@ def replay_strategy(
         history = df.iloc[: idx + 1].reset_index(drop=True)
         future_window = df.iloc[idx + 1 : idx + 1 + max_hold_bars]
         levels = find_levels(history, window=3, tolerance=None, min_touches=2)
-        structure = classify_structure(history, lookback=min(30, len(history)))
+        market_regime = analyze_market_regime(history, lookback=min(30, len(history)))
+        structure = market_regime["structure"]
         signal = classify_signal(history, levels["supports"], levels["resistances"], structure)
         volume_read = analyze_volume(history)
         plan = build_trade_plan(
@@ -90,6 +91,9 @@ def replay_strategy(
                 "bias": plan.bias,
                 "setup": plan.setup,
                 "structure": structure,
+                "regime_trend_state": market_regime["trend_state"],
+                "regime_range_state": market_regime["range_state"],
+                "regime_breakout_state": market_regime["breakout_state"],
                 "signal": signal["signal"],
                 "trend_bias": bias_from_structure(structure),
                 "volume_state": volume_read["volume_state"],

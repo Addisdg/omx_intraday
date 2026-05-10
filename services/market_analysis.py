@@ -163,6 +163,7 @@ def research_dataframe(
             confidence_score=current["confidence"]["score"],
             volume_state=current["volume"]["volume_state"],
             rr_ratio=current["trade_plan"].rr_ratio,
+            market_regime=current["market_regime"],
         ),
         portfolio_size_sek=portfolio_size_sek,
         risk_percent=risk_percent,

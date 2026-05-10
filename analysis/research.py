@@ -28,7 +28,16 @@ class HistoricalEdge:
     match_description: str = "setup only"
 
 
-SIMILARITY_DIMENSIONS = ("structure", "trend_bias", "volume_state", "rr_bucket", "confidence_bucket")
+SIMILARITY_DIMENSIONS = (
+    "structure",
+    "trend_bias",
+    "volume_state",
+    "rr_bucket",
+    "confidence_bucket",
+    "regime_trend_state",
+    "regime_range_state",
+    "regime_breakout_state",
+)
 
 
 def estimate_historical_edge(
@@ -169,6 +178,7 @@ def build_similarity_context(
     confidence_score: int | float | None = None,
     volume_state: str | None = None,
     rr_ratio: float | None = None,
+    market_regime: dict | None = None,
 ) -> dict:
     context = {"setup": setup}
     if structure is not None:
@@ -180,7 +190,21 @@ def build_similarity_context(
         context["rr_bucket"] = rr_bucket(rr_ratio)
     if confidence_score is not None:
         context["confidence_bucket"] = confidence_bucket(confidence_score)
+    if market_regime is not None:
+        _add_regime_context(context, market_regime)
     return context
+
+
+def _add_regime_context(context: dict, market_regime: dict) -> None:
+    regime_fields = {
+        "regime_trend_state": "trend_state",
+        "regime_range_state": "range_state",
+        "regime_breakout_state": "breakout_state",
+    }
+    for context_key, regime_key in regime_fields.items():
+        value = market_regime.get(regime_key)
+        if value is not None and value != "unknown":
+            context[context_key] = value
 
 
 def _select_similar_trades(
