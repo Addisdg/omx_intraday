@@ -27,7 +27,14 @@ from analysis.research import (
     probability_from_edge,
     run_historical_research,
 )
-from analysis.screener import calculate_rank_components, candidate_filter_result, screener_failure_row, select_screener_columns
+from analysis.screener import (
+    calculate_rank_components,
+    candidate_filter_result,
+    classify_screener_exception,
+    research_status_reason,
+    screener_failure_row,
+    select_screener_columns,
+)
 from analysis.signals import classify_signal
 from analysis.timeframes import compare_timeframes
 from analysis.trade_engine import TradePlan, build_trade_plan, calculate_position_size
@@ -1026,6 +1033,28 @@ def test_screener_failure_row_explains_symbol_failures() -> None:
     assert row["research_quality"] == "No evidence"
     assert row["status_reason"] == "download failed"
     assert "no usable research result" in row["candidate_filter"]
+
+
+def test_screener_exception_classifier_maps_common_provider_failures() -> None:
+    timeout = classify_screener_exception(TimeoutError("request timed out"))
+    connection = classify_screener_exception(ConnectionError("DNS lookup failed"))
+    schema = classify_screener_exception(ValueError("Missing expected columns: ['close']"))
+    no_data = classify_screener_exception(RuntimeError("possibly delisted; no data found"))
+    unexpected = classify_screener_exception(RuntimeError("strange internal problem"))
+
+    assert timeout["status"] == "provider_timeout"
+    assert "timed out" in timeout["reason"]
+    assert connection["status"] == "provider_connection_error"
+    assert schema["status"] == "provider_schema_error"
+    assert no_data["status"] == "no_data"
+    assert unexpected["status"] == "error"
+    assert unexpected["reason"] == "Unexpected screener error while processing this symbol."
+
+
+def test_research_status_reason_maps_known_statuses() -> None:
+    assert research_status_reason("no_data") == "No candles were available for research."
+    assert research_status_reason("invalid_data") == "Research data failed quality checks."
+    assert research_status_reason("custom") == "Research returned status custom."
 
 
 def test_service_analyze_dataframe_returns_current_read() -> None:

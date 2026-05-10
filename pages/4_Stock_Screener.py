@@ -3,7 +3,14 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
-from analysis.screener import calculate_rank_components, candidate_filter_result, screener_failure_row, select_screener_columns
+from analysis.screener import (
+    calculate_rank_components,
+    candidate_filter_result,
+    classify_screener_exception,
+    research_status_reason,
+    screener_failure_row,
+    select_screener_columns,
+)
 from data.provider_yfinance import YFinanceProvider
 from services.market_analysis import research_dataframe
 
@@ -36,7 +43,7 @@ def screen_symbol(symbol: str) -> dict:
         max_hold_bars=max_hold_bars,
     )
     if result["status"] != "ok":
-        return screener_failure_row(symbol, result["status"], f"Research returned status {result['status']}")
+        return screener_failure_row(symbol, result["status"], research_status_reason(result["status"]))
 
     current = result["current"]
     research = result["research"]
@@ -96,7 +103,8 @@ if st.sidebar.button("Run screener", type="primary"):
         try:
             rows.append(screen_symbol(symbol))
         except Exception as exc:
-            rows.append(screener_failure_row(symbol, "error", str(exc)))
+            failure = classify_screener_exception(exc)
+            rows.append(screener_failure_row(symbol, failure["status"], failure["reason"]))
         progress.progress(idx / len(symbols))
     status_line.caption(f"Finished screening {len(symbols)} symbols.")
 

@@ -106,6 +106,50 @@ def screener_failure_row(symbol: str, status: str, reason: str) -> dict:
     }
 
 
+def classify_screener_exception(exc: Exception) -> dict:
+    message = str(exc).strip()
+    lowered = message.lower()
+
+    if isinstance(exc, TimeoutError) or "timeout" in lowered or "timed out" in lowered:
+        return {
+            "status": "provider_timeout",
+            "reason": "Market-data provider timed out for this symbol.",
+        }
+    if isinstance(exc, ConnectionError) or any(term in lowered for term in ["connection", "network", "dns", "name resolution"]):
+        return {
+            "status": "provider_connection_error",
+            "reason": "Market-data provider connection failed for this symbol.",
+        }
+    if any(term in lowered for term in ["rate limit", "too many requests", "429"]):
+        return {
+            "status": "provider_rate_limited",
+            "reason": "Market-data provider rate-limited this request.",
+        }
+    if isinstance(exc, ValueError) and "missing expected columns" in lowered:
+        return {
+            "status": "provider_schema_error",
+            "reason": "Market-data provider returned an unexpected data shape.",
+        }
+    if any(term in lowered for term in ["possibly delisted", "no data", "not found", "invalid symbol"]):
+        return {
+            "status": "no_data",
+            "reason": "No usable market data was returned for this symbol.",
+        }
+    return {
+        "status": "error",
+        "reason": "Unexpected screener error while processing this symbol.",
+    }
+
+
+def research_status_reason(status: str) -> str:
+    reasons = {
+        "no_data": "No candles were available for research.",
+        "invalid_data": "Research data failed quality checks.",
+        "insufficient_data": "Not enough candles were available for research.",
+    }
+    return reasons.get(status, f"Research returned status {status}.")
+
+
 def select_screener_columns(columns: list[str], preset: str) -> list[str]:
     preferred = SCREENER_TABLE_COLUMNS.get(preset, [])
     return [column for column in preferred if column in columns]
