@@ -21,6 +21,7 @@ def score_setup(
     volume_read: dict,
     timeframe_confirmation: dict | None = None,
     volatility_regime: dict | None = None,
+    indicator_context: dict | None = None,
 ) -> dict:
     if df.empty:
         return {
@@ -62,6 +63,8 @@ def score_setup(
         notes.append(volume_read["reason"])
     if volatility_regime is not None and volatility_regime.get("volatility_state") in {"quiet", "elevated", "extreme"}:
         notes.append(volatility_regime["reason"])
+    if indicator_context is not None:
+        notes.extend(_indicator_notes(indicator_context))
     if trade_plan.rr_ratio is not None and trade_plan.rr_ratio >= 2:
         notes.append("Reward/risk passes the minimum filter")
 
@@ -142,6 +145,23 @@ def _factor_timeframe_confirmation(timeframe_confirmation: dict) -> dict:
         8,
         timeframe_confirmation.get("reason", "Higher-timeframe confirmation is unavailable"),
     )
+
+
+def _indicator_notes(indicator_context: dict) -> list[str]:
+    if indicator_context.get("status") != "ok":
+        return []
+
+    notes = []
+    rsi_state = indicator_context.get("rsi_state")
+    macd_state = indicator_context.get("macd_state")
+    trend_state = indicator_context.get("trend_strength_state")
+    if rsi_state in {"overbought", "oversold"}:
+        notes.append(f"RSI is {rsi_state}; treat this as stretched momentum context, not a signal by itself.")
+    if macd_state in {"bullish", "bearish"}:
+        notes.append(f"MACD momentum is {macd_state}; use it as confirmation context only.")
+    if trend_state in {"strengthening_up", "strengthening_down"}:
+        notes.append(f"EMA20 slope is {trend_state}; trend context is visible but does not change the trade plan.")
+    return notes
 
 
 def _factor(score: int, max_score: int, reason: str) -> dict:

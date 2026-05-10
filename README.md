@@ -72,11 +72,12 @@ http://localhost:8501
 7. Pick a display timezone for the last candle timestamp.
 8. Pick an optional confirmation timeframe to compare the current setup with a broader trend.
 9. Choose chart overlays such as extra EMAs, VWAP, and ATR bands.
-10. Use `Show levels within % of price` to hide distant support/resistance lines.
-11. Use `Clean chart mode` when the chart gets too busy.
-12. Use `Quick presets` to quickly switch to common symbols.
-13. Save your preferred settings with `Save current settings`.
-14. Enable `Show debug errors` only when troubleshooting.
+10. Toggle `Show indicator context` to show or hide the RSI/MACD/Bollinger summary.
+11. Use `Show levels within % of price` to hide distant support/resistance lines.
+12. Use `Clean chart mode` when the chart gets too busy.
+13. Use `Quick presets` to quickly switch to common symbols.
+14. Save your preferred settings with `Save current settings`.
+15. Enable `Show debug errors` only when troubleshooting.
 
 The right panel gives a plain-language interpretation:
 
@@ -89,6 +90,7 @@ The right panel gives a plain-language interpretation:
 | `Confidence` | A 0-100 score built from trend alignment, level location, R/R, volume, freshness, and optional higher-timeframe confirmation. |
 | `Volume context` | Latest volume compared with recent average volume. |
 | `Volatility context` | Current ATR compared with recent ATR history, labeled as quiet, normal, elevated, or extreme. |
+| `Indicator context` | RSI, MACD, Bollinger position, and EMA20 slope summarized as supporting context, not standalone signals. |
 | `Trade Engine` | A possible plan if conditions meet the strategy rules. |
 | `R/R ratio` | Reward-to-risk ratio based on entry, stop, and target. |
 | `Position size` | Shares/contracts based on portfolio size, risk %, entry, and stop. |
@@ -268,6 +270,11 @@ When `tolerance=None`, the function uses an adaptive tolerance based on recent p
 - VWAP.
 - ATR.
 - ATR upper/lower bands.
+- Optional RSI.
+- Optional MACD line, signal line, and histogram.
+- Optional Bollinger Bands and percent-B.
+
+`summarize_indicator_context()` turns RSI, MACD, Bollinger position, and EMA20 slope into compact decision-support context. These readings are intentionally exposed as scenario evidence and confidence notes rather than automatic buy/sell signals.
 
 ### `analysis/confidence.py`
 
@@ -284,6 +291,8 @@ The score also returns explainable factor details with each factor's score, maxi
 When a confirmation timeframe is supplied, `score_setup()` adds an explainable adjustment for aligned, mixed, unknown, or conflicting higher-timeframe structure. This affects confidence only; it does not change the entry, stop, or target rules.
 
 Volatility regime is added as context in confidence notes when ATR is unusually quiet, elevated, or extreme. It does not change entries, stops, targets, or position sizing.
+
+Indicator context can add notes when RSI is stretched, MACD momentum is directional, or EMA20 slope is strengthening. These notes do not add hidden score points or change the trade plan.
 
 ### `analysis/volume.py`
 
@@ -565,6 +574,7 @@ A trade plan should be read as a scenario, not an instruction. The app does not 
 - Strategy confidence score.
 - Volume analysis.
 - ATR-based volatility regime context.
+- RSI, MACD, Bollinger, and EMA20-slope indicator context.
 - Saved user settings and watchlist.
 - Backtest equity curve, per-setup stats, date filtering, overlap prevention, and parameter scan.
 

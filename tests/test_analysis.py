@@ -15,7 +15,7 @@ from analysis.backtest import (
 )
 from analysis.confidence import score_setup
 from analysis.data_quality import assess_data_quality
-from analysis.indicators import add_indicators
+from analysis.indicators import add_indicators, summarize_indicator_context
 from analysis.levels import find_levels
 from analysis.market_hours import format_timestamp, infer_market
 from analysis.market_structure import classify_structure
@@ -178,6 +178,53 @@ def test_indicators_add_ema_vwap_and_atr_bands() -> None:
 
     assert {"ema9", "ema20", "vwap", "atr", "atr_upper", "atr_lower"}.issubset(enriched.columns)
     assert enriched["ema20"].notna().all()
+
+
+def test_indicators_add_rsi_macd_and_bollinger_columns() -> None:
+    df = _df(list(range(100, 140)))
+
+    enriched = add_indicators(
+        df,
+        include_vwap=False,
+        include_atr_bands=False,
+        include_rsi=True,
+        include_macd=True,
+        include_bollinger=True,
+    )
+
+    assert {
+        "rsi",
+        "macd",
+        "macd_signal",
+        "macd_histogram",
+        "bb_middle",
+        "bb_upper",
+        "bb_lower",
+        "bb_percent_b",
+    }.issubset(enriched.columns)
+    assert enriched.iloc[-1]["rsi"] == 100
+    assert pd.notna(enriched.iloc[-1]["bb_percent_b"])
+
+
+def test_indicator_summary_reports_decision_context() -> None:
+    df = _df(list(range(100, 140)))
+
+    context = summarize_indicator_context(df)
+
+    assert context["status"] == "ok"
+    assert context["rsi_state"] == "overbought"
+    assert context["macd_state"] == "bullish"
+    assert context["bollinger_state"] in {"near_upper", "above_upper"}
+    assert context["trend_strength_state"] == "strengthening_up"
+    assert "RSI is overbought" in context["reason"]
+
+
+def test_indicator_summary_handles_insufficient_data() -> None:
+    context = summarize_indicator_context(_df([100, 101, 102]))
+
+    assert context["status"] == "insufficient_data"
+    assert context["rsi"] is None
+    assert context["rsi_state"] == "unknown"
 
 
 def test_cache_round_trip(tmp_path) -> None:
@@ -416,6 +463,31 @@ def test_confidence_notes_include_volatility_context() -> None:
     )
 
     assert "Current ATR is extreme versus recent history" in confidence["notes"]
+
+
+def test_confidence_notes_include_indicator_context_without_changing_components() -> None:
+    df = _df(list(range(100, 140)))
+    levels = {"supports": [125.0, 130.0], "resistances": [138.0]}
+    structure = "uptrend"
+    signal = classify_signal(df, levels["supports"], levels["resistances"], structure)
+    plan = build_trade_plan(df, structure, levels["supports"], levels["resistances"])
+    volume = analyze_volume(df)
+    indicator_context = summarize_indicator_context(df)
+
+    confidence = score_setup(
+        df,
+        structure,
+        signal,
+        plan,
+        levels["supports"],
+        levels["resistances"],
+        volume,
+        indicator_context=indicator_context,
+    )
+
+    assert "indicator_context" not in confidence["components"]
+    assert any("RSI is overbought" in note for note in confidence["notes"])
+    assert any("MACD momentum is bullish" in note for note in confidence["notes"])
 
 
 def test_timeframe_comparison_reports_aligned_and_conflicting_context() -> None:
@@ -690,13 +762,15 @@ def test_screener_candidate_filter_explains_pass_and_failures() -> None:
 
 
 def test_service_analyze_dataframe_returns_current_read() -> None:
-    result = analyze_dataframe(_df([100, 101, 102, 103, 104, 106]))
+    result = analyze_dataframe(_df(list(range(100, 140))))
 
     assert result["status"] == "ok"
     assert "confidence" in result
     assert result["data_quality"]["status"] == "ok"
     assert "trade_plan" in result
     assert "volatility" in result
+    assert result["indicators"]["status"] == "ok"
+    assert result["indicators"]["rsi_state"] == "overbought"
 
 
 def test_service_analyze_dataframe_returns_timeframe_confirmation() -> None:

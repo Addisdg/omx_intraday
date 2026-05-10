@@ -5,6 +5,7 @@ from streamlit_autorefresh import st_autorefresh
 
 from analysis.confidence import score_setup
 from analysis.data_quality import assess_data_quality
+from analysis.indicators import summarize_indicator_context
 from analysis.levels import find_levels
 from analysis.market_hours import format_timestamp, market_status
 from analysis.market_structure import classify_structure
@@ -123,6 +124,9 @@ show_vwap = st.sidebar.checkbox("Show VWAP", value=bool(settings["show_vwap"]), 
 show_atr_bands = st.sidebar.checkbox(
     "Show ATR bands", value=bool(settings["show_atr_bands"]), disabled=clean_chart_mode
 )
+show_indicator_context = st.sidebar.checkbox(
+    "Show indicator context", value=bool(settings["show_indicator_context"])
+)
 level_distance_percent = st.sidebar.slider(
     "Show levels within % of price",
     min_value=0.0,
@@ -151,6 +155,7 @@ if st.sidebar.button("Save current settings"):
             "ema_spans": ema_spans or [20],
             "show_vwap": show_vwap,
             "show_atr_bands": show_atr_bands,
+            "show_indicator_context": show_indicator_context,
             "clean_chart_mode": clean_chart_mode,
             "level_distance_percent": level_distance_percent,
             "enable_alerts": enable_alerts,
@@ -183,6 +188,7 @@ try:
     signal = classify_signal(df, levels["supports"], levels["resistances"], structure)
     volume_read = analyze_volume(df)
     volatility_read = analyze_volatility_regime(df)
+    indicator_context = summarize_indicator_context(df)
     timeframe_confirmation = None
     if confirmation_interval != "None":
         confirmation_df = provider.get_history(
@@ -216,6 +222,7 @@ try:
         volume_read,
         timeframe_confirmation=timeframe_confirmation,
         volatility_regime=volatility_read,
+        indicator_context=indicator_context,
     )
 
     latest_close = float(df.iloc[-1]["close"])
@@ -291,6 +298,16 @@ try:
             st.write(f"**Current ATR:** {_fmt(volatility_read['current_atr'])}")
             st.write(f"**Baseline ATR:** {_fmt(volatility_read['baseline_atr'])}")
             st.caption(volatility_read["reason"])
+
+        if show_indicator_context:
+            with st.expander("Indicator context", expanded=False):
+                st.write(f"**Status:** {indicator_context['status']}")
+                st.write(f"**RSI:** {_fmt(indicator_context['rsi'])} ({indicator_context['rsi_state']})")
+                st.write(f"**MACD:** {indicator_context['macd_state']}")
+                st.write(f"**MACD histogram:** {_fmt(indicator_context['macd_histogram'])}")
+                st.write(f"**Bollinger position:** {indicator_context['bollinger_state']}")
+                st.write(f"**EMA20 slope:** {_fmt(indicator_context['ema20_slope_percent'])}%")
+                st.caption(indicator_context["reason"])
 
         st.subheader("Trade Engine")
         if trade_plan.bias == "BULLISH":

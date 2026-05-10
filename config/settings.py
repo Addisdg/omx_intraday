@@ -19,6 +19,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "ema_spans": [20],
     "show_vwap": False,
     "show_atr_bands": False,
+    "show_indicator_context": True,
     "clean_chart_mode": False,
     "level_distance_percent": 0.0,
     "enable_alerts": True,

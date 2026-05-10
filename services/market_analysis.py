@@ -4,6 +4,7 @@ import pandas as pd
 
 from analysis.confidence import score_setup
 from analysis.data_quality import assess_data_quality
+from analysis.indicators import summarize_indicator_context
 from analysis.levels import find_levels
 from analysis.market_structure import classify_structure
 from analysis.research import build_similarity_context, run_historical_research
@@ -36,6 +37,7 @@ def analyze_dataframe(
     signal = classify_signal(df, levels["supports"], levels["resistances"], structure)
     volume = analyze_volume(df)
     volatility = analyze_volatility_regime(df)
+    indicator_context = summarize_indicator_context(df)
     plan = build_trade_plan(
         df=df,
         structure=structure,
@@ -63,6 +65,7 @@ def analyze_dataframe(
         volume,
         timeframe_confirmation=timeframe_confirmation,
         volatility_regime=volatility,
+        indicator_context=indicator_context,
     )
 
     return {
@@ -76,6 +79,7 @@ def analyze_dataframe(
         "signal_label": signal_label(signal["signal"]),
         "volume": volume,
         "volatility": volatility,
+        "indicators": indicator_context,
         "timeframe_confirmation": timeframe_confirmation,
         "trade_plan": plan,
         "setup_label": setup_label(plan.setup),
