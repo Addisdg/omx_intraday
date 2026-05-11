@@ -37,6 +37,7 @@ from analysis.screener import (
 )
 from analysis.signals import classify_signal
 from analysis.setup_filters import analyze_bullish_pullback_setup
+from analysis.symbol_universes import build_screening_universe, parse_symbol_text
 from analysis.timeframes import compare_timeframes
 from analysis.trade_engine import TradePlan, build_trade_plan, calculate_position_size
 from analysis.volatility import analyze_volatility_regime
@@ -339,6 +340,36 @@ def test_bullish_pullback_setup_reports_insufficient_data() -> None:
     assert setup["status"] == "insufficient_data"
     assert setup["candidate"] is False
     assert setup["score"] == 0
+
+
+def test_symbol_text_parser_accepts_common_paste_formats() -> None:
+    symbols = parse_symbol_text("symbol\nAAPL, msft; nvda\nBTC-USD EURUSD=X\nAAPL")
+
+    assert symbols == ["AAPL", "MSFT", "NVDA", "BTC-USD", "EURUSD=X"]
+
+
+def test_screening_universe_combines_presets_manual_uploads_and_caps() -> None:
+    universe = build_screening_universe(
+        selected_universes=["Default Demo", "Missing Preset"],
+        manual_symbols="AAPL\nTSLA",
+        uploaded_symbols="NOVO-B.CO,MSFT",
+        max_symbols=8,
+    )
+
+    assert universe["symbols"] == [
+        "AAPL",
+        "MSFT",
+        "NVDA",
+        "SPY",
+        "BTC-USD",
+        "ETH-USD",
+        "EURUSD=X",
+        "TSLA",
+    ]
+    assert universe["requested_count"] == 9
+    assert universe["selected_count"] == 8
+    assert universe["truncated"] is True
+    assert universe["unknown_universes"] == ["Missing Preset"]
 
 
 def test_cache_round_trip(tmp_path) -> None:

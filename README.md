@@ -114,6 +114,7 @@ The right panel gives a plain-language interpretation:
 - The historical research workflow now reports research quality, matched dimensions, fallback level, warnings, and validation status.
 - The stock screener now has focused tabs for ranking, quality, research details, and all columns.
 - Screener failures are isolated per symbol and categorized, so one bad ticker does not stop the whole scan.
+- The bullish pullback screener now supports larger preset universes, manual additions, uploaded symbol files, and per-run caps.
 
 ## Code Design
 
@@ -134,6 +135,7 @@ The code is intentionally split into small modules so the dashboard stays readab
 │   ├── setup_filters.py
 │   ├── signals.py
 │   ├── structure.py
+│   ├── symbol_universes.py
 │   ├── trade_engine.py
 │   └── volume.py
 ├── charts/
@@ -520,7 +522,7 @@ Screener rows include research quality, fallback level, validation status, match
 
 Open `Bullish Pullback Screener` in the Streamlit sidebar.
 
-This page scans a symbol list for one specific educational setup: a bullish pullback-recovery candidate. It does not rank the whole market in general; it ranks how well each symbol matches this technical setup:
+This page scans symbol universes for one specific educational setup: a bullish pullback-recovery candidate. It does not rank the whole market in general; it ranks how well each symbol matches this technical setup:
 
 - Close above SMA200 with a non-falling SMA200.
 - Pullback into the SMA50 area followed by recovery.
@@ -529,6 +531,8 @@ This page scans a symbol list for one specific educational setup: a bullish pull
 - Reclaim of SMA50.
 - Strong bullish candle near recent resistance.
 - Acceptable reward/risk to nearby resistance.
+
+The sidebar supports curated presets such as US large/liquid stocks, US growth/momentum, US sector ETFs, OMX Stockholm large/liquid names, Nordic large/liquid samples, crypto/FX, plus manual symbols and uploaded `.txt` or `.csv` symbol files. The `Max symbols per run` control caps the scan so large yfinance requests remain intentional and easier to troubleshoot.
 
 The output shows candidates, all screened symbols, failed conditions, provider/source metadata, and a transparent setup score out of 100.
 
@@ -612,7 +616,7 @@ A trade plan should be read as a scenario, not an instruction. The app does not 
 - Typed provider errors for common market-data failures.
 - Watchlist scanner.
 - Stock screener with historical edge ranking, research-quality gates, tabbed result views, and per-symbol failure isolation.
-- Bullish pullback screener for SMA200/SMA50, RSI, MACD, candle-strength, resistance, and reward/risk evidence.
+- Bullish pullback screener for SMA200/SMA50, RSI, MACD, candle-strength, resistance, and reward/risk evidence, with larger preset universes and symbol upload support.
 - FastAPI service boundary for future mobile/PWA clients.
 - Market-hours awareness for OMX, US, FX, and crypto.
 - Timezone-formatted timestamps.
