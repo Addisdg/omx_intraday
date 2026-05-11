@@ -41,7 +41,7 @@ from analysis.trade_engine import TradePlan, build_trade_plan, calculate_positio
 from analysis.volatility import analyze_volatility_regime
 from analysis.volume import analyze_volume
 from config.settings import load_settings, save_settings
-from data.cache import load_cached_data, save_cached_data
+from data.cache import cache_metadata_path, load_cached_data, save_cached_data
 from data.provider_base import (
     ProviderRateLimitError,
     ProviderSchemaError,
@@ -289,17 +289,34 @@ def test_indicator_summary_handles_insufficient_data() -> None:
 
 
 def test_cache_round_trip(tmp_path) -> None:
-    df = _df([100, 101, 102])
+    df = attach_provider_metadata(
+        _df([100, 101, 102]),
+        {
+            "provider": "yfinance",
+            "source": "download",
+            "symbol": "^OMX",
+            "interval": "1m",
+            "period": "1d",
+            "retrieved_at": "2026-04-24T09:00:00+00:00",
+            "adjusted": False,
+            "warnings": ["provider warning"],
+        },
+    )
 
     save_cached_data(df, "^OMX", "1m", cache_dir=tmp_path)
     loaded = load_cached_data("^OMX", "1m", cache_dir=tmp_path)
 
     assert len(loaded) == len(df)
     assert list(loaded.columns) == list(df.columns)
+    assert cache_metadata_path("^OMX", "1m", cache_dir=tmp_path).exists()
     metadata = provider_metadata_from_df(loaded)
-    assert metadata["provider"] == "local_cache"
+    assert metadata["provider"] == "yfinance"
     assert metadata["source"] == "cache"
     assert metadata["symbol"] == "^OMX"
+    assert metadata["period"] == "1d"
+    assert metadata["retrieved_at"] == "2026-04-24T09:00:00+00:00"
+    assert "provider warning" in metadata["warnings"]
+    assert "Loaded from local CSV cache" in metadata["warnings"]
 
 
 def test_market_helpers_infer_and_format_timezone() -> None:
