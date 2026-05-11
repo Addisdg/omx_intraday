@@ -36,6 +36,7 @@ from analysis.screener import (
     select_screener_columns,
 )
 from analysis.signals import classify_signal
+from analysis.setup_filters import analyze_bullish_pullback_setup
 from analysis.timeframes import compare_timeframes
 from analysis.trade_engine import TradePlan, build_trade_plan, calculate_position_size
 from analysis.volatility import analyze_volatility_regime
@@ -82,6 +83,36 @@ def _volatility_df(ranges: list[float]) -> pd.DataFrame:
                 "low": 100.0 - candle_range / 2,
                 "close": 100.0,
                 "volume": 1_000,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def _bullish_pullback_df() -> pd.DataFrame:
+    closes = (
+        [100 + idx * 0.28 for idx in range(180)]
+        + [150 - idx * 0.45 for idx in range(35)]
+        + [135, 136, 137, 138, 139, 140, 141, 142, 141, 140, 146]
+    )
+    rows = []
+    for idx, close in enumerate(closes):
+        open_price = close - 0.4
+        high = close + 0.8
+        low = close - 0.8
+        volume = 1_000
+        if idx == len(closes) - 1:
+            open_price = close - 4
+            high = close + 1
+            low = close - 4.5
+            volume = 2_500
+        rows.append(
+            {
+                "timestamp": pd.Timestamp("2025-01-01") + pd.Timedelta(days=idx),
+                "open": open_price,
+                "high": high,
+                "low": low,
+                "close": close,
+                "volume": volume,
             }
         )
     return pd.DataFrame(rows)
@@ -286,6 +317,28 @@ def test_indicator_summary_handles_insufficient_data() -> None:
     assert context["status"] == "insufficient_data"
     assert context["rsi"] is None
     assert context["rsi_state"] == "unknown"
+
+
+def test_bullish_pullback_setup_scores_recovery_candidate() -> None:
+    setup = analyze_bullish_pullback_setup(_bullish_pullback_df())
+
+    assert setup["status"] == "ok"
+    assert setup["score"] >= 70
+    assert setup["candidate"] is True
+    assert setup["conditions"]["above_sma200"]["passed"] is True
+    assert setup["conditions"]["pullback_completed"]["passed"] is True
+    assert setup["conditions"]["rsi_recovering"]["passed"] is True
+    assert setup["conditions"]["reclaiming_sma50"]["passed"] is True
+    assert setup["nearest_resistance"] is not None
+    assert setup["suggested_stop"] is not None
+
+
+def test_bullish_pullback_setup_reports_insufficient_data() -> None:
+    setup = analyze_bullish_pullback_setup(_df([100, 101, 102]))
+
+    assert setup["status"] == "insufficient_data"
+    assert setup["candidate"] is False
+    assert setup["score"] == 0
 
 
 def test_cache_round_trip(tmp_path) -> None:

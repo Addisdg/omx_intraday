@@ -14,9 +14,10 @@ The dashboard has three main areas:
 | Candlestick chart | Displays intraday price candles, selected EMAs, optional VWAP, optional ATR bands, detected supports, and detected resistances. |
 | Market Read + Trade Engine | Shows compact cards for price, signal, confidence, volume context, setup scenario, entry, stop, target, R/R, and position size. |
 | Backtest page | Replays the rules candle by candle and reports win rate, total R, drawdown, equity curve, setup stats, and trade history. |
-| Historical Research page | Compares the current setup to similar historical setups and shows probability-style output. |
+| Historical Research page | Compares the current setup to similar historical setups and shows probability-style output, quality warnings, similarity fallback, and out-of-sample validation. |
 | Watchlist page | Scans multiple symbols and highlights active setups, confidence, volume state, and safer scenario labels. |
-| Stock Screener page | Ranks many symbols by current confidence plus historical replay edge. |
+| Stock Screener page | Ranks many symbols by current confidence plus historical replay edge, research quality, and provider/status diagnostics. |
+| Bullish Pullback Screener page | Filters symbols for a specific bullish pullback-recovery setup using SMA200, SMA50, RSI, MACD, candle strength, resistance, and reward/risk evidence. |
 
 Example symbols:
 
@@ -99,10 +100,20 @@ The right panel gives a plain-language interpretation:
 ## Important Limitations
 
 - `yfinance` intraday data can be delayed, incomplete, throttled, or unavailable for some tickers.
+- Cache metadata is stored per symbol/interval cache file, not per row. Avoid mixing different providers into the same cache file unless you are comfortable with file-level provenance.
 - Signals are rule-based and do not know about news, macro events, liquidity, spreads, fees, or order-book depth.
 - Position sizing assumes the displayed instrument can be traded in whole units and does not account for broker-specific rules.
 - Index symbols such as `^OMX` may not be directly tradable as shares. Treat plans for indexes as analytical reference unless mapped to a tradable product.
 - The app is educational analysis only and should not be used as the sole basis for real trades.
+
+## Latest Updates
+
+- Provider metadata is now carried through analysis output and shown in the dashboard.
+- Cached CSV files now get `.metadata.json` sidecars so provider provenance survives reloads.
+- Provider failures use typed errors for timeout, connection, rate-limit, schema, and unexpected provider problems.
+- The historical research workflow now reports research quality, matched dimensions, fallback level, warnings, and validation status.
+- The stock screener now has focused tabs for ranking, quality, research details, and all columns.
+- Screener failures are isolated per symbol and categorized, so one bad ticker does not stop the whole scan.
 
 ## Code Design
 
@@ -120,6 +131,7 @@ The code is intentionally split into small modules so the dashboard stays readab
 │   ├── market_hours.py
 │   ├── market_structure.py
 │   ├── research.py
+│   ├── setup_filters.py
 │   ├── signals.py
 │   ├── structure.py
 │   ├── trade_engine.py
@@ -136,7 +148,8 @@ The code is intentionally split into small modules so the dashboard stays readab
 │   ├── 1_Backtest.py
 │   ├── 2_Watchlist.py
 │   ├── 3_Historical_Research.py
-│   └── 4_Stock_Screener.py
+│   ├── 4_Stock_Screener.py
+│   └── 5_Bullish_Pullback_Screener.py
 ├── services/
 │   └── market_analysis.py
 ├── ui/
@@ -503,6 +516,22 @@ Enter one symbol per line. The screener downloads history for each symbol, runs 
 
 Screener rows include research quality, fallback level, validation status, matched dimensions, and quality warnings. Results are split into ranking, quality, research-detail, and all-column tabs so the table stays easier to scan. Individual symbol failures are isolated into failed rows with status reasons so one bad ticker does not stop the whole scan; common provider timeouts, connection errors, rate limits, schema mismatches, and no-data cases are categorized for easier review. A symbol must pass probability, positive-total-R, and usable-quality filters before appearing as a higher-quality candidate.
 
+## Bullish Pullback Screening
+
+Open `Bullish Pullback Screener` in the Streamlit sidebar.
+
+This page scans a symbol list for one specific educational setup: a bullish pullback-recovery candidate. It does not rank the whole market in general; it ranks how well each symbol matches this technical setup:
+
+- Close above SMA200 with a non-falling SMA200.
+- Pullback into the SMA50 area followed by recovery.
+- RSI14 recovering.
+- MACD histogram turning positive or strengthening.
+- Reclaim of SMA50.
+- Strong bullish candle near recent resistance.
+- Acceptable reward/risk to nearby resistance.
+
+The output shows candidates, all screened symbols, failed conditions, provider/source metadata, and a transparent setup score out of 100.
+
 ## API And Mobile Path
 
 The app now has a FastAPI-compatible service boundary.
@@ -577,9 +606,13 @@ A trade plan should be read as a scenario, not an instruction. The app does not 
 
 - Backtesting and replay page.
 - Historical research page with probability-style output.
-- Local data caching in `data/cache/`.
+- Historical research quality panel with matched sample size, fallback level, warnings, and validation status.
+- Local data caching in `data/cache/` with provider metadata sidecars.
+- Provider provenance metadata in service/API results and dashboard provider details.
+- Typed provider errors for common market-data failures.
 - Watchlist scanner.
-- Stock screener with historical edge ranking.
+- Stock screener with historical edge ranking, research-quality gates, tabbed result views, and per-symbol failure isolation.
+- Bullish pullback screener for SMA200/SMA50, RSI, MACD, candle-strength, resistance, and reward/risk evidence.
 - FastAPI service boundary for future mobile/PWA clients.
 - Market-hours awareness for OMX, US, FX, and crypto.
 - Timezone-formatted timestamps.
@@ -594,12 +627,13 @@ A trade plan should be read as a scenario, not an instruction. The app does not 
 - ATR-based volatility regime context.
 - RSI, MACD, Bollinger, and EMA20-slope indicator context.
 - Explainable market-regime context behind the structure label.
+- Regime-aware historical similarity matching.
 - Saved user settings and watchlist.
 - Backtest equity curve, per-setup stats, date filtering, overlap prevention, and parameter scan.
 
 ## Potential Next Improvement
 
-The strongest next improvement is a richer data layer. `yfinance` is good for prototyping, but a serious research tool would benefit from a dedicated market-data provider with deeper intraday history, adjusted corporate actions, cleaner volume, fundamentals, and survivorship-bias-aware universes.
+The strongest next improvement is a real provider plugin layer. `yfinance` is good for prototyping, and the app now records provider metadata and typed provider errors, but a serious research tool would benefit from a dedicated market-data provider with deeper intraday history, adjusted corporate actions, cleaner volume, fundamentals, and survivorship-bias-aware universes.
 
 ## Terminal Helper Appendix
 
